@@ -94,3 +94,5 @@ Temporary Items
 
 .cache
 .ccls
+.compile_commands.json
+.platformio
