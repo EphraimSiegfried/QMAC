@@ -20,7 +20,7 @@ HardwareSerial GPSSerial1(1);
 
 void setup() {
   // Setup Serial
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial);
 
   // Setup LoRa
