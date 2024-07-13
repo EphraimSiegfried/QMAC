@@ -41,9 +41,9 @@ void setup() {
   Serial.println("LoRa Duplex");
 
   // override the default CS, reset, and IRQ pins (optional)
-  LoRa.setPins(SS, RST, RST);// set CS, reset, IRQ pin
+  LoRa.setPins(SS, RST, DI0);// set CS, reset, IRQ pin
 
-  if (!LoRa.begin(BAND)) {             // initialize ratio at 915 MHz
+  if (!LoRa.begin(BAND)) {  
     Serial.println("LoRa init failed. Check your connections.");
     while (true);                       // if failed, do nothing
   }
