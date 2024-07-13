@@ -3,6 +3,8 @@
 #include <LoRa.h>
 #include <TinyGPS++.h>                       
 #include <QMAC.h>
+#include <Debug.h>
+#include "esp_timer.h"
 
 #define SCK  5   // GPIO5  -- SX1278's SCK
 #define MISO 19  // GPIO19 -- SX1278's MISnO
@@ -17,6 +19,11 @@
 
 TinyGPSPlus gps;                            
 HardwareSerial GPSSerial1(1);                 
+esp_timer_handle_t timer_handle;
+
+void timer_callback(void* arg) {
+    Serial.println("Timeout interrupt triggered");
+}
 
 void setup() {
   // Setup Serial
@@ -24,35 +31,28 @@ void setup() {
   while (!Serial);
 
   // Setup LoRa
-  LoRa.setPins(SS, RST, RST);// set CS, reset, IRQ pin
+  SPI.begin(SCK,MISO,MOSI,SS);
+  LoRa.setPins(SS, RST, DI0);// set CS, reset, IRQ pin
   if (!LoRa.begin(BAND)) {
-    Serial.println("Starting LoRa failed!");
+    LOG("Starting LoRa failed!");
     while (1);
   }
+
+  // esp_timer_create_args_t timer_args = {
+  //       .callback = &timer_callback,
+  //       .name = "timeout_timer"
+  //   };
+  // esp_timer_create(&timer_args, &timer_handle);
+  // esp_timer_start_periodic(timer_handle, 2000000);
 
   // Setup GPS
   GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);   //17-TX 18-RX
   delay(1500);
 
-  Serial.println("Setup done");
-
-  QMAC.send("HelloWorld");
+  LOG("Setup done");
+  QMAC.begin();
+  QMAC.send("Hey");
 }
 
 void loop() {
-  // try to parse packet
-  int packetSize = LoRa.parsePacket();
-  if (packetSize) {
-    // received a packet
-    Serial.print("Received packet '");
-
-    // read packet
-    while (LoRa.available()) {
-      Serial.print((char)LoRa.read());
-    }
-
-    // print RSSI of packet
-    Serial.print("' with RSSI ");
-    Serial.println(LoRa.packetRssi());
-  }
 }
