@@ -18,12 +18,12 @@ class QMACClass {
    public:
     byte localAddress;
     // 60 seconds sleep time, 5 seconds active time
-    bool begin(int64_t wakeUpInterval = 60000,
-               int64_t activeDuration = 5000, byte localAddress = 0xFF);
+    bool begin(int64_t wakeUpInterval = 60000, int64_t activeDuration = 5000,
+               byte localAddress = 0xFF);
     bool send(String payload, byte destination = 0xFF);
     bool push(String payload, byte destination = 0xFF);
     void run();
-    static void onReceiveWrapper(int packetSize);
+    int amountAvailable();
     void receive(int packetSize);
     cppQueue receptionQueue{sizeof(Packet)};
     cppQueue sendQueue{sizeof(String)};

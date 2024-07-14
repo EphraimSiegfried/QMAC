@@ -57,5 +57,14 @@ void loop() {
     LOG(QMAC.isActivePeriod ? "active" : "sleeping");
     QMAC.run();
 
+    if (QMAC.amountAvailable() > 0) {
+        Packet p;
+        QMAC.receptionQueue.pop(&p);
+        LOG("Received packet:");
+        for (size_t i = 0; i < p.payloadLength; i++) {
+            Serial.print((char)p.payload[i]);
+        }
+    }
+
     delay(1000);
 }

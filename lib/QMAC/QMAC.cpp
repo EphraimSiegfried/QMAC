@@ -30,6 +30,8 @@ void QMACClass::run() {
     return;
 }
 
+int QMACClass::amountAvailable() { return receptionQueue.getCount(); }
+
 bool QMACClass::push(String payload, byte destination) {
     sendQueue.push(&payload);
     return true;
@@ -66,10 +68,12 @@ bool QMACClass::send(String payload, byte destination) {
         return false;
     }
     this->msgCount++;
+    LOG("Sent packet");
     return true;
 }
 
 void QMACClass::receive(int packetSize) {
+    LOG("Received packet");
     Packet p;
     p.destination = LoRa.read();
     p.localAddress = LoRa.read();
