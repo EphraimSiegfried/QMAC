@@ -44,18 +44,18 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-
     LOG("Setup done");
     QMAC.begin(30000, 15000);
     // QMAC.send("Hey");
 }
 
 void loop() {
-    delay(2000);
-    if (QMAC.isActivePeriod){
-      LOG("active " + String(millis()) + " "  +String(QMAC.receptionQueue.getCount()));
-    } else {
-      LOG("sleeping " + String(millis()) + " " + String(QMAC.receptionQueue.getCount()));
+    if (Serial.available()) {
+        String msg = Serial.readStringUntil('\n');
+        QMAC.push(msg);
     }
+    LOG(QMAC.isActivePeriod ? "active" : "sleeping");
+    QMAC.run();
 
+    delay(1000);
 }

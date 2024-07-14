@@ -16,12 +16,11 @@ bool QMACClass::begin(int64_t wakeUpInterval, int64_t activeDuration,
     esp_timer_start_once(timer_handle, wakeUpInterval);
 
     LOG("Local Address: " + String(this->localAddress));
-    LoRa.onReceive(onReceiveWrapper);  // set the static wrapper as the callback
     return true;
 }
 
 void QMACClass::run() {
-    if (this->isActivePeriod) {
+    while (this->isActivePeriod) {
         for (size_t i = 0; i < sendQueue.getCount(); i++) {
             String payload;
             sendQueue.pop(&payload);
@@ -70,11 +69,7 @@ bool QMACClass::send(String payload, byte destination) {
     return true;
 }
 
-ICACHE_RAM_ATTR void QMACClass::onReceiveWrapper(int packetSize) {
-    QMAC.onReceive(packetSize);  // call the non-static member function
-}
-
-void QMACClass::onReceive(int packetSize) {
+void QMACClass::receive(int packetSize) {
     Packet p;
     p.destination = LoRa.read();
     p.localAddress = LoRa.read();
