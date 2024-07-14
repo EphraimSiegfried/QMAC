@@ -1,9 +1,11 @@
 #include <Arduino.h>
-#include <SPI.h>
-#include <LoRa.h>
-#include <TinyGPS++.h>                       
-#include <QMAC.h>
 #include <Debug.h>
+#include <LoRa.h>
+#include <QMAC.h>
+#include <SPI.h>
+#include <TinyGPS++.h>
+#include <cppQueue.h>
+
 #include "esp_timer.h"
 
 #define SCK  5   // GPIO5  -- SX1278's SCK
@@ -17,8 +19,8 @@
 #define GPS_RX_PIN 34
 #define GPS_TX_PIN 12
 
-TinyGPSPlus gps;                            
-HardwareSerial GPSSerial1(1);                 
+TinyGPSPlus gps;
+HardwareSerial GPSSerial1(1);
 esp_timer_handle_t timer_handle;
 
 void timer_callback(void* arg) {
@@ -26,33 +28,34 @@ void timer_callback(void* arg) {
 }
 
 void setup() {
-  // Setup Serial
-  Serial.begin(115200);
-  while (!Serial);
+    // Setup Serial
+    Serial.begin(115200);
+    while (!Serial);
 
-  // Setup LoRa
-  SPI.begin(SCK,MISO,MOSI,SS);
-  LoRa.setPins(SS, RST, DI0);// set CS, reset, IRQ pin
-  if (!LoRa.begin(BAND)) {
-    LOG("Starting LoRa failed!");
-    while (1);
-  }
+    // Setup LoRa
+    SPI.begin(SCK, MISO, MOSI, SS);
+    LoRa.setPins(SS, RST, DI0);  // set CS, reset, IRQ pin
+    if (!LoRa.begin(BAND)) {
+        LOG("Starting LoRa failed!");
+        while (1);
+    }
 
-  // esp_timer_create_args_t timer_args = {
-  //       .callback = &timer_callback,
-  //       .name = "timeout_timer"
-  //   };
-  // esp_timer_create(&timer_args, &timer_handle);
-  // esp_timer_start_periodic(timer_handle, 2000000);
+    // Setup GPS
+    GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
+    delay(1500);
 
-  // Setup GPS
-  GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);   //17-TX 18-RX
-  delay(1500);
 
-  LOG("Setup done");
-  QMAC.begin();
-  QMAC.send("Hey");
+    LOG("Setup done");
+    QMAC.begin(30000, 15000);
+    // QMAC.send("Hey");
 }
 
 void loop() {
+    delay(2000);
+    if (QMAC.isActivePeriod){
+      LOG("active " + String(millis()) + " "  +String(QMAC.receptionQueue.getCount()));
+    } else {
+      LOG("sleeping " + String(millis()) + " " + String(QMAC.receptionQueue.getCount()));
+    }
+
 }

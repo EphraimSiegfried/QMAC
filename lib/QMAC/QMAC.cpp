@@ -1,12 +1,54 @@
 #include <QMAC.h>
 
-
-bool QMACClass::begin(byte localAddress) {
-    // assign random address if not address not specified
+bool QMACClass::begin(int64_t wakeUpInterval, int64_t activeDuration,
+                      byte localAddress) {
+    // assign random address if address not specified
     this->localAddress = localAddress == 0xFF ? random(254) : localAddress;
-    LOG("Local Address: " + String(this->localAddress));
     this->msgCount = 0;
+    this->wakeUpInterval = 1000 * wakeUpInterval;
+    this->activeDuration = 1000 * activeDuration;
+    this->isActivePeriod = false;
+
+    esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
+                                          .arg = this,
+                                          .name = "duty_cycle_timer"};
+    esp_timer_create(&timer_args, &this->timer_handle);
+    esp_timer_start_once(timer_handle, wakeUpInterval);
+
+    LOG("Local Address: " + String(this->localAddress));
     LoRa.onReceive(onReceiveWrapper);  // set the static wrapper as the callback
+    return true;
+}
+
+void QMACClass::run() {
+    if (this->isActivePeriod) {
+        for (size_t i = 0; i < sendQueue.getCount(); i++) {
+            String payload;
+            sendQueue.pop(&payload);
+            send(payload);
+        }
+    }
+    return;
+}
+
+bool QMACClass::push(String payload, byte destination) {
+    sendQueue.push(&payload);
+    return true;
+}
+
+bool QMACClass::sendAck(byte destination, byte msgCount) {
+    if (!LoRa.beginPacket()) {
+        // LOG("LoRa beginPacket failed");
+        return false;
+    }
+    LoRa.write(destination);
+    LoRa.write(this->localAddress);
+    LoRa.write(msgCount);
+    LoRa.write(0);  // add payload length (0 for ack)
+    if (!LoRa.endPacket()) {
+        // LOG("LoRa endPacket failed");
+        return false;
+    }
     return true;
 }
 
@@ -15,11 +57,11 @@ bool QMACClass::send(String payload, byte destination) {
         LOG("LoRa beginPacket failed");
         return false;
     }
-    LoRa.write(destination);              // add destination address
-    LoRa.write(this->localAddress);       // add sender address
-    LoRa.write(this->msgCount);           // add message ID
-    LoRa.write(payload.length());         // add payload length
-    LoRa.print(payload);                  // add payload
+    LoRa.write(destination);         // add destination address
+    LoRa.write(this->localAddress);  // add sender address
+    LoRa.write(this->msgCount);      // add message ID
+    LoRa.write(payload.length());    // add payload length
+    LoRa.print(payload);             // add payload
     if (!LoRa.endPacket()) {
         LOG("LoRa endPacket failed");
         return false;
@@ -28,45 +70,35 @@ bool QMACClass::send(String payload, byte destination) {
     return true;
 }
 
-void QMACClass::onReceiveWrapper(int packetSize) {
+ICACHE_RAM_ATTR void QMACClass::onReceiveWrapper(int packetSize) {
     QMAC.onReceive(packetSize);  // call the non-static member function
 }
 
 void QMACClass::onReceive(int packetSize) {
-    if (packetSize == 0) return;  // if there's no packet, return
-
-    // read packet header bytes:
-    int recipient = LoRa.read();          // recipient address
-    byte sender = LoRa.read();            // sender address
-    byte incomingMsgId = LoRa.read();     // incoming msg ID
-    byte incomingLength = LoRa.read();    // incoming msg length
-
-    String incoming = "";
-
-    while (LoRa.available()) {
-        incoming += (char)LoRa.read();
+    Packet p;
+    p.destination = LoRa.read();
+    p.localAddress = LoRa.read();
+    p.msgCount = LoRa.read();
+    p.payloadLength = LoRa.read();
+    for (size_t i = 0; i < p.payloadLength; i++) {
+        p.payload[i] = LoRa.read();
     }
+    receptionQueue.push(&p);
+    sendAck(p.localAddress, p.msgCount);
+}
 
-    if (incomingLength != incoming.length()) {   // check length for error
-        Serial.println("error: message length does not match length");
-        return;                             // skip rest of function
+void QMACClass::timerCallback(void* arg) {
+    QMACClass* self = static_cast<QMACClass*>(arg);
+
+    if (self->isActivePeriod) {
+        LoRa.sleep();
+        self->isActivePeriod = false;
+        esp_timer_start_once(self->timer_handle, self->wakeUpInterval);
+    } else {
+        LoRa.receive();
+        self->isActivePeriod = true;
+        esp_timer_start_once(self->timer_handle, self->activeDuration);
     }
-
-    // if the recipient isn't this device or broadcast,
-    if (recipient != localAddress && recipient != 0xFF) {
-        Serial.println("This message is not for me.");
-        return;                             // skip rest of function
-    }
-
-    // if message is for this device, or broadcast, print details:
-    Serial.println("Received from: 0x" + String(sender, HEX));
-    Serial.println("Sent to: 0x" + String(recipient, HEX));
-    Serial.println("Message ID: " + String(incomingMsgId));
-    Serial.println("Message length: " + String(incomingLength));
-    Serial.println("Message: " + incoming);
-    Serial.println("RSSI: " + String(LoRa.packetRssi()));
-    Serial.println("Snr: " + String(LoRa.packetSnr()));
-    Serial.println();
 }
 
 QMACClass QMAC;
