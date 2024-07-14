@@ -46,7 +46,6 @@ void setup() {
 
     LOG("Setup done");
     QMAC.begin(30000, 15000);
-    // QMAC.send("Hey");
 }
 
 void loop() {
@@ -64,6 +63,7 @@ void loop() {
         for (size_t i = 0; i < p.payloadLength; i++) {
             Serial.print((char)p.payload[i]);
         }
+        Serial.println();
     }
 
     delay(1000);

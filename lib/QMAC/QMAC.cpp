@@ -20,12 +20,14 @@ bool QMACClass::begin(int64_t wakeUpInterval, int64_t activeDuration,
 }
 
 void QMACClass::run() {
+    LoRa.receive();
     while (this->isActivePeriod) {
         for (size_t i = 0; i < sendQueue.getCount(); i++) {
             String payload;
             sendQueue.pop(&payload);
             send(payload);
         }
+        QMAC.receive(LoRa.parsePacket());
     }
     return;
 }
@@ -72,7 +74,8 @@ bool QMACClass::send(String payload, byte destination) {
     return true;
 }
 
-void QMACClass::receive(int packetSize) {
+bool QMACClass::receive(int packetSize) {
+    if (!packetSize) return false;
     LOG("Received packet");
     Packet p;
     p.destination = LoRa.read();
@@ -83,6 +86,7 @@ void QMACClass::receive(int packetSize) {
         p.payload[i] = LoRa.read();
     }
     receptionQueue.push(&p);
+    return true;
     sendAck(p.localAddress, p.msgCount);
 }
 

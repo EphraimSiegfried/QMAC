@@ -24,7 +24,7 @@ class QMACClass {
     bool push(String payload, byte destination = 0xFF);
     void run();
     int amountAvailable();
-    void receive(int packetSize);
+    bool receive(int packetSize);
     cppQueue receptionQueue{sizeof(Packet)};
     cppQueue sendQueue{sizeof(String)};
     volatile bool isActivePeriod;
