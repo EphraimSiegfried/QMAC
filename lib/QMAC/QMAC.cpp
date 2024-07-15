@@ -77,6 +77,7 @@ bool QMACClass::sendPacket(Packet p) {
     LoRa.write(p.localAddress);   // add sender address
     LoRa.write(p.msgCount);       // add message ID
     LoRa.write(p.payloadLength);  // add payload length
+    LOG("SENT PAYLOADLENGTH " + String(p.payloadLength));
     for (size_t i = 0; i < p.payloadLength; i++) {
         LoRa.write(p.payload[i]);
     }

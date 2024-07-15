@@ -40,7 +40,7 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-    QMAC.begin(30000, 15000);
+    QMAC.begin(5000, 5000);
     LOG("Setup done");
 }
 
