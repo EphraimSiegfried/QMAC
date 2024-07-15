@@ -5,6 +5,7 @@
 #include <LoRa.h>
 #include <cppQueue.h>
 #include <esp_timer.h>
+#include <KickSort.h>
 
 typedef struct QMACPacket {
     byte destination;
@@ -27,7 +28,7 @@ class QMACClass {
     bool receive(int packetSize);
     cppQueue receptionQueue{sizeof(Packet)};
     cppQueue sendQueue{sizeof(String)};
-    volatile bool isActivePeriod;
+    bool isActivePeriod();
 
    private:
     byte msgCount;
@@ -36,6 +37,5 @@ class QMACClass {
     int64_t activeDuration;
     esp_timer_handle_t timer_handle;
     bool sendAck(byte destination, byte msgCount);
-    static void timerCallback(void* arg);
 };
 extern QMACClass QMAC;

@@ -5,30 +5,46 @@ bool QMACClass::begin(int64_t wakeUpInterval, int64_t activeDuration,
     // assign random address if address not specified
     this->localAddress = localAddress == 0xFF ? random(254) : localAddress;
     this->msgCount = 0;
-    this->wakeUpInterval = 1000 * wakeUpInterval;
-    this->activeDuration = 1000 * activeDuration;
-    this->isActivePeriod = false;
-
-    esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
-                                          .arg = this,
-                                          .name = "duty_cycle_timer"};
-    esp_timer_create(&timer_args, &this->timer_handle);
-    esp_timer_start_once(timer_handle, wakeUpInterval);
+    this->wakeUpInterval = wakeUpInterval;
+    this->activeDuration = activeDuration;
 
     LOG("Local Address: " + String(this->localAddress));
     return true;
 }
 
+bool QMACClass::isActivePeriod() {
+    return millis() % this->wakeUpInterval < this->activeDuration;
+}
+
 void QMACClass::run() {
-    LoRa.receive();
-    while (this->isActivePeriod) {
-        for (size_t i = 0; i < sendQueue.getCount(); i++) {
+    if (!isActivePeriod()) return;
+
+    // Schedule in which time slots packets in the queue should be sent
+    int slotTime = 40;
+    int activeSlots[sendQueue.getCount()];
+    int numSlots = activeDuration / slotTime;
+    for (size_t i = 0; i < sendQueue.getCount(); i++) {
+        activeSlots[i] = random(numSlots);
+    }
+    KickSort<int>::quickSort(activeSlots, sendQueue.getCount());
+
+    // Start listening and sending packets
+    int64_t startTime = millis();
+    size_t idx = 0;
+    while (isActivePeriod()) {
+        if (!sendQueue.isEmpty() &&
+            millis() >= activeSlots[idx] * slotTime + startTime) {
             String payload;
             sendQueue.pop(&payload);
             send(payload);
+            idx++;
         }
+
         QMAC.receive(LoRa.parsePacket());
     }
+
+    // Go to sleep when active time is over
+    LoRa.sleep();
     return;
 }
 
@@ -88,20 +104,6 @@ bool QMACClass::receive(int packetSize) {
     receptionQueue.push(&p);
     return true;
     sendAck(p.localAddress, p.msgCount);
-}
-
-void QMACClass::timerCallback(void* arg) {
-    QMACClass* self = static_cast<QMACClass*>(arg);
-
-    if (self->isActivePeriod) {
-        LoRa.sleep();
-        self->isActivePeriod = false;
-        esp_timer_start_once(self->timer_handle, self->wakeUpInterval);
-    } else {
-        LoRa.receive();
-        self->isActivePeriod = true;
-        esp_timer_start_once(self->timer_handle, self->activeDuration);
-    }
 }
 
 QMACClass QMAC;

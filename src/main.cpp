@@ -23,10 +23,6 @@ TinyGPSPlus gps;
 HardwareSerial GPSSerial1(1);
 esp_timer_handle_t timer_handle;
 
-void timer_callback(void* arg) {
-    Serial.println("Timeout interrupt triggered");
-}
-
 void setup() {
     // Setup Serial
     Serial.begin(115200);
@@ -53,7 +49,7 @@ void loop() {
         String msg = Serial.readStringUntil('\n');
         QMAC.push(msg);
     }
-    LOG(QMAC.isActivePeriod ? "active" : "sleeping");
+    LOG(QMAC.isActivePeriod() ? "active" : "sleeping");
     QMAC.run();
 
     if (QMAC.amountAvailable() > 0) {
