@@ -1,11 +1,11 @@
 #include <QMAC.h>
 
-bool QMACClass::begin(int64_t wakeUpInterval, int64_t activeDuration,
+bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
                       byte localAddress) {
     // assign random address if address not specified
     this->localAddress = localAddress == 0xFF ? random(254) : localAddress;
     this->msgCount = 0;
-    this->wakeUpInterval = wakeUpInterval;
+    this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
 
     LOG("Local Address: " + String(this->localAddress));
@@ -13,7 +13,16 @@ bool QMACClass::begin(int64_t wakeUpInterval, int64_t activeDuration,
 }
 
 bool QMACClass::isActivePeriod() {
-    return millis() % this->wakeUpInterval < this->activeDuration;
+    // return millis() % this->sleepingDuration < this->activeDuration;
+    if (this->active && millis() - this->startCounter >= this->activeDuration) {
+        this->active = false;
+        this->startCounter = millis();
+    }
+    else if (!this->active && millis() - this->startCounter >= this->sleepingDuration) {
+        this->active = true;
+        this->startCounter = millis();
+    }
+    return active;
 }
 
 void QMACClass::run() {

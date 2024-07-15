@@ -20,7 +20,7 @@ class QMACClass {
    public:
     byte localAddress;
     // 60 seconds sleep time, 5 seconds active time
-    bool begin(int64_t wakeUpInterval = 60000, int64_t activeDuration = 5000,
+    bool begin(int64_t sleepingDuration = 60000, int64_t activeDuration = 5000,
                byte localAddress = 0xFF);
     bool push(String payload, byte destination = 0xFF);
     void run();
@@ -33,8 +33,10 @@ class QMACClass {
    private:
     byte msgCount;
     int64_t lastTimeActive;
-    int64_t wakeUpInterval;
+    int64_t sleepingDuration;
     int64_t activeDuration;
+    bool active = true;
+    int64_t startCounter = millis();
     esp_timer_handle_t timer_handle;
     List<Packet> unackedQueue;
     bool sendAck(Packet p);
