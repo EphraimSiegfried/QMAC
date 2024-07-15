@@ -36,6 +36,7 @@ class QMACClass {
     int64_t wakeUpInterval;
     int64_t activeDuration;
     esp_timer_handle_t timer_handle;
+    List<Packet> unackedQueue;
     bool sendAck(Packet p);
     bool sendPacket(Packet p);
 };

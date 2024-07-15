@@ -31,10 +31,14 @@ void QMACClass::run() {
     // Start listening and sending packets
     int64_t startTime = millis();
     size_t idx = 0;
+    unackedQueue.clear();
     while (isActivePeriod()) {
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
-            sendPacket(sendQueue[sendQueue.getSize() - 1]);
+            Packet nextPacket = sendQueue[sendQueue.getSize() - 1];
+            sendPacket(nextPacket);
+            sendQueue.removeLast();
+            unackedQueue.add(nextPacket);
             idx++;
         }
 
@@ -44,6 +48,7 @@ void QMACClass::run() {
 
     // Go to sleep when active time is over
     LoRa.sleep();
+    sendQueue.addAll(unackedQueue);
     return;
 }
 
@@ -105,10 +110,10 @@ bool QMACClass::receive(int packetSize) {
 
     // Check if received packet is an ACK
     if (p.payloadLength == 0) {
-        for (size_t i = 0; i < sendQueue.getSize(); i++) {
-            if (sendQueue[i].msgCount == p.msgCount) {
-                sendQueue.remove(i);
-                LOG("Packet " + String(sendQueue[i].msgCount) +
+        for (size_t i = 0; i < unackedQueue.getSize(); i++) {
+            if (unackedQueue[i].msgCount == p.msgCount) {
+                unackedQueue.remove(i);
+                LOG("Packet " + String(unackedQueue[i].msgCount) +
                     " got succesfully ACKED");
             }
         }
