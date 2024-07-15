@@ -22,13 +22,12 @@ class QMACClass {
     // 60 seconds sleep time, 5 seconds active time
     bool begin(int64_t wakeUpInterval = 60000, int64_t activeDuration = 5000,
                byte localAddress = 0xFF);
-    bool send(String payload, byte destination = 0xFF);
     bool push(String payload, byte destination = 0xFF);
     void run();
     int amountAvailable();
     bool receive(int packetSize);
     List<Packet> receptionQueue;
-    List<String> sendQueue;
+    List<Packet> sendQueue;
     bool isActivePeriod();
 
    private:
@@ -37,6 +36,7 @@ class QMACClass {
     int64_t wakeUpInterval;
     int64_t activeDuration;
     esp_timer_handle_t timer_handle;
-    bool sendAck(byte destination, byte msgCount);
+    bool sendAck(Packet p);
+    bool sendPacket(Packet p);
 };
 extern QMACClass QMAC;

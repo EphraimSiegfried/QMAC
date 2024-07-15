@@ -22,7 +22,6 @@
 
 TinyGPSPlus gps;
 HardwareSerial GPSSerial1(1);
-esp_timer_handle_t timer_handle;
 
 void setup() {
     // Setup Serial
