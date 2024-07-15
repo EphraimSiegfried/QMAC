@@ -4,7 +4,8 @@
 #include <QMAC.h>
 #include <SPI.h>
 #include <TinyGPS++.h>
-#include <cppQueue.h>
+
+#include <List.hpp>
 
 #include "esp_timer.h"
 
@@ -40,8 +41,8 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-    LOG("Setup done");
     QMAC.begin(30000, 15000);
+    LOG("Setup done");
 }
 
 void loop() {
@@ -52,9 +53,9 @@ void loop() {
     LOG(QMAC.isActivePeriod() ? "active" : "sleeping");
     QMAC.run();
 
-    if (QMAC.amountAvailable() > 0) {
-        Packet p;
-        QMAC.receptionQueue.pop(&p);
+    for (size_t i = 0; i < QMAC.receptionQueue.getSize(); i++) {
+        Packet p = QMAC.receptionQueue[i];
+        QMAC.receptionQueue.remove(i);
         LOG("Received packet:");
         for (size_t i = 0; i < p.payloadLength; i++) {
             Serial.print((char)p.payload[i]);

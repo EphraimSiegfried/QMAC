@@ -2,10 +2,11 @@
 
 #include <Arduino.h>
 #include <Debug.h>
-#include <LoRa.h>
-#include <cppQueue.h>
-#include <esp_timer.h>
 #include <KickSort.h>
+#include <LoRa.h>
+#include <esp_timer.h>
+
+#include <List.hpp>
 
 typedef struct QMACPacket {
     byte destination;
@@ -26,8 +27,8 @@ class QMACClass {
     void run();
     int amountAvailable();
     bool receive(int packetSize);
-    cppQueue receptionQueue{sizeof(Packet)};
-    cppQueue sendQueue{sizeof(String)};
+    List<Packet> receptionQueue;
+    List<String> sendQueue;
     bool isActivePeriod();
 
    private:

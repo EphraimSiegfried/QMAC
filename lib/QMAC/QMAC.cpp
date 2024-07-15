@@ -20,13 +20,13 @@ void QMACClass::run() {
     if (!isActivePeriod()) return;
 
     // Schedule in which time slots packets in the queue should be sent
-    int slotTime = 40;
-    int activeSlots[sendQueue.getCount()];
+    int slotTime = 40;  // TODO: move
+    int activeSlots[sendQueue.getSize()];
     int numSlots = activeDuration / slotTime;
-    for (size_t i = 0; i < sendQueue.getCount(); i++) {
+    for (size_t i = 0; i < sendQueue.getSize(); i++) {
         activeSlots[i] = random(numSlots);
     }
-    KickSort<int>::quickSort(activeSlots, sendQueue.getCount());
+    KickSort<int>::quickSort(activeSlots, sendQueue.getSize());
 
     // Start listening and sending packets
     int64_t startTime = millis();
@@ -34,9 +34,8 @@ void QMACClass::run() {
     while (isActivePeriod()) {
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
-            String payload;
-            sendQueue.pop(&payload);
-            send(payload);
+            send(sendQueue[sendQueue.getSize() - 1]);
+            sendQueue.removeLast();
             idx++;
         }
 
@@ -48,16 +47,15 @@ void QMACClass::run() {
     return;
 }
 
-int QMACClass::amountAvailable() { return receptionQueue.getCount(); }
+int QMACClass::amountAvailable() { return receptionQueue.getSize(); }
 
 bool QMACClass::push(String payload, byte destination) {
-    sendQueue.push(&payload);
+    sendQueue.add(payload);
     return true;
 }
 
 bool QMACClass::sendAck(byte destination, byte msgCount) {
     if (!LoRa.beginPacket()) {
-        // LOG("LoRa beginPacket failed");
         return false;
     }
     LoRa.write(destination);
@@ -65,9 +63,9 @@ bool QMACClass::sendAck(byte destination, byte msgCount) {
     LoRa.write(msgCount);
     LoRa.write(0);  // add payload length (0 for ack)
     if (!LoRa.endPacket()) {
-        // LOG("LoRa endPacket failed");
         return false;
     }
+    LOG("Sent ACK for message ID: " + String(msgCount));
     return true;
 }
 
@@ -92,7 +90,6 @@ bool QMACClass::send(String payload, byte destination) {
 
 bool QMACClass::receive(int packetSize) {
     if (!packetSize) return false;
-    LOG("Received packet");
     Packet p;
     p.destination = LoRa.read();
     p.localAddress = LoRa.read();
@@ -101,9 +98,16 @@ bool QMACClass::receive(int packetSize) {
     for (size_t i = 0; i < p.payloadLength; i++) {
         p.payload[i] = LoRa.read();
     }
-    receptionQueue.push(&p);
+
+    // Check if received packet is an ACK
+    if (p.payloadLength == 0) {
+        LOG("Received ACK");
+        return true;
+    }
+    LOG("Received packet");
+    receptionQueue.add(p);
+    if (!sendAck(p.localAddress, p.msgCount)) LOG("Failed to send ACK");
     return true;
-    sendAck(p.localAddress, p.msgCount);
 }
 
 QMACClass QMAC;

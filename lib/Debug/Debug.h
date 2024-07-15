@@ -5,5 +5,4 @@
 #ifdef DEBUG
 #define LOG(str) Serial.println(str)
 #else
-#define LOG(str)
 #endif
