@@ -37,9 +37,9 @@ void QMACClass::run() {
     while (this->active) {
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
-            Packet nextPacket = sendQueue[sendQueue.getSize() - 1];
+            Packet nextPacket = sendQueue[0];
             sendPacket(nextPacket);
-            sendQueue.removeLast();
+            sendQueue.removeFirst();
             unackedQueue.add(nextPacket);
             idx++;
         }
@@ -105,6 +105,11 @@ bool QMACClass::receive(int packetSize) {
     p.payloadLength = LoRa.read();
     for (size_t i = 0; i < p.payloadLength; i++) {
         p.payload[i] = LoRa.read();
+    }
+
+    // ignore packet if it is not for us
+    if (p.destination != this->localAddress && p.destination != 0xff) {
+        return true;
     }
 
     // Check if received packet is an ACK
