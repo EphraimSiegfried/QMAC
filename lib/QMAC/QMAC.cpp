@@ -109,29 +109,37 @@ bool QMACClass::receive(int packetSize) {
     p.destination = LoRa.read();
     p.localAddress = LoRa.read();
     p.msgCount = LoRa.read();
-    p.payloadLength = LoRa.read();
-    for (size_t i = 0; i < p.payloadLength; i++) {
-        p.payload[i] = LoRa.read();
+    // If it is a sync packet, answer:
+    if (p.msgCount == 0) {
+        LoRa.print(esp_timer_get_next_alarm() / 1000 + this->sleepingDuration -
+                   millis());
     }
-
-    // ignore packet if it is not for this device
-    if (p.destination != this->localAddress && p.destination != 0xff) {
-        return true;
-    }
-
-    // Check if received packet is an ACK
-    if (p.payloadLength == 0) {
-        for (size_t i = 0; i < unackedQueue.getSize(); i++) {
-            if (unackedQueue[i].msgCount == p.msgCount) {
-                unackedQueue.remove(i);
-                LOG("Packet " + String(p.msgCount) + " got succesfully ACKED");
-                return true;
-            }
+    // It isn't:
+    else {
+        p.payloadLength = LoRa.read();
+        for (size_t i = 0; i < p.payloadLength; i++) {
+            p.payload[i] = LoRa.read();
         }
-    } else {
-        LOG("Received packet with ID " + String(p.msgCount));
-        receptionQueue.add(p);
-        if (!sendAck(p)) LOG("Failed to send ACK");
+
+        // ignore packet if it is not for this device
+        if (p.destination != this->localAddress && p.destination != 0xff) {
+            return true;
+        }
+
+        // Check if received packet is an ACK
+        if (p.payloadLength == 0) {
+            for (size_t i = 0; i < unackedQueue.getSize(); i++) {
+                if (unackedQueue[i].msgCount == p.msgCount) {
+                    unackedQueue.remove(i);
+                    LOG("Packet " + String(p.msgCount) + " got succesfully ACKED");
+                    return true;
+                }
+            }
+        } else {
+            LOG("Received packet with ID " + String(p.msgCount));
+            receptionQueue.add(p);
+            if (!sendAck(p)) LOG("Failed to send ACK");
+        }
     }
 
     return true;
