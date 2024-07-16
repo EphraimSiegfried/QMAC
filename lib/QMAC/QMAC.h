@@ -12,6 +12,7 @@ typedef struct QMACPacket {
     byte destination;
     byte localAddress;
     byte msgCount;
+    int64_t nextWakeUpTime;
     byte payloadLength;
     byte payload[5];
 } Packet;
@@ -32,6 +33,8 @@ class QMACClass {
     static void timerCallback(void *arg);
 
    private:
+    void synchronize();
+    void updateTimer(uint64_t timeUntilActive);
     byte msgCount;
     int64_t lastTimeActive;
     int64_t sleepingDuration;
