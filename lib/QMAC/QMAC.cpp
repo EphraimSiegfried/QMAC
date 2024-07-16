@@ -50,6 +50,7 @@ void QMACClass::run() {
 
     // Go to sleep when active time is over
     LoRa.sleep();
+    if (!unackedQueue.isEmpty()) LOG("Number of UNACKED Packets: " + String(unackedQueue.getSize()));
     sendQueue.addAll(unackedQueue);
     return;
 }
