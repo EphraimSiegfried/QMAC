@@ -40,7 +40,7 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-    QMAC.begin(15000, 5000);
+    QMAC.begin(5000, 2000);
     LOG("Setup done");
 }
 
@@ -49,7 +49,7 @@ void loop() {
         String msg = Serial.readStringUntil('\n');
         QMAC.push(msg);
     }
-    LOG(QMAC.isActivePeriod() ? "active" : "sleeping");
+    LOG(QMAC.active ? "active" : "sleeping");
     QMAC.run();
 
     for (size_t i = 0; i < QMAC.receptionQueue.getSize(); i++) {

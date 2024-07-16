@@ -8,25 +8,18 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
     this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
 
+    esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
+                                          .arg = this,
+                                          .name = "duty_cycle_timer"};
+    esp_timer_create(&timer_args, &this->timer_handle);
+    esp_timer_start_once(timer_handle, sleepingDuration * 1000);
+
     LOG("Local Address: " + String(this->localAddress));
     return true;
 }
 
-bool QMACClass::isActivePeriod() {
-    // return millis() % this->sleepingDuration < this->activeDuration;
-    if (this->active && millis() - this->startCounter >= this->activeDuration) {
-        this->active = false;
-        this->startCounter = millis();
-    }
-    else if (!this->active && millis() - this->startCounter >= this->sleepingDuration) {
-        this->active = true;
-        this->startCounter = millis();
-    }
-    return active;
-}
-
 void QMACClass::run() {
-    if (!isActivePeriod()) return;
+    if (!this->active) return;
 
     // Schedule in which time slots packets in the queue should be sent
     int slotTime = 40;  // TODO: move
@@ -41,7 +34,7 @@ void QMACClass::run() {
     int64_t startTime = millis();
     size_t idx = 0;
     unackedQueue.clear();
-    while (isActivePeriod()) {
+    while (this->active) {
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
             Packet nextPacket = sendQueue[sendQueue.getSize() - 1];
@@ -91,7 +84,6 @@ bool QMACClass::sendPacket(Packet p) {
     LoRa.write(p.localAddress);   // add sender address
     LoRa.write(p.msgCount);       // add message ID
     LoRa.write(p.payloadLength);  // add payload length
-    LOG("SENT PAYLOADLENGTH " + String(p.payloadLength));
     for (size_t i = 0; i < p.payloadLength; i++) {
         LoRa.write(p.payload[i]);
     }
@@ -100,19 +92,17 @@ bool QMACClass::sendPacket(Packet p) {
         LOG("LoRa endPacket failed");
         return false;
     }
-    LOG("Sent Packet " + String(p.msgCount));
+    LOG("Sent Packet with ID:" + String(p.msgCount));
     return true;
 }
 
 bool QMACClass::receive(int packetSize) {
     if (!packetSize) return false;
-    LOG("RECEIVED");
     Packet p;
     p.destination = LoRa.read();
     p.localAddress = LoRa.read();
     p.msgCount = LoRa.read();
     p.payloadLength = LoRa.read();
-    LOG("Payload length " + String(p.payloadLength));
     for (size_t i = 0; i < p.payloadLength; i++) {
         p.payload[i] = LoRa.read();
     }
@@ -122,8 +112,8 @@ bool QMACClass::receive(int packetSize) {
         for (size_t i = 0; i < unackedQueue.getSize(); i++) {
             if (unackedQueue[i].msgCount == p.msgCount) {
                 unackedQueue.remove(i);
-                LOG("Packet " + String(unackedQueue[i].msgCount) +
-                    " got succesfully ACKED");
+                LOG("Packet " + String(p.msgCount) + " got succesfully ACKED");
+                return true;
             }
         }
     } else {
@@ -134,5 +124,18 @@ bool QMACClass::receive(int packetSize) {
 
     return true;
 }
+void QMACClass::timerCallback(void* arg) {
+    QMACClass* self = static_cast<QMACClass*>(arg);
+    esp_timer_start_once(self->timer_handle, self->active
+                                                 ? self->sleepingDuration * 1000
+                                                 : self->activeDuration * 1000);
+    self->active = !self->active;
+}
+
+// void QMACClass::updateTimer(int timeUntilActivePeriod) {
+//     esp_timer_stop(this->timer_handle);
+//     this->active = false;
+//     esp_timer_start_once(this->timer_handle, timeUntilActivePeriod);
+// }
 
 QMACClass QMAC;
