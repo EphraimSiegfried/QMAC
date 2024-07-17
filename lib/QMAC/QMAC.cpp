@@ -4,7 +4,7 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
                       byte localAddress) {
     // assign random address if address not specified
     this->localAddress = localAddress == 0xFF ? random(254) : localAddress;
-    this->msgCount = 0;
+    this->msgCount = 1;
     this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
 
@@ -45,7 +45,38 @@ void QMACClass::run() {
             idx++;
         }
 
-        QMAC.receive(LoRa.parsePacket());
+        Packet p = {};
+        // start listening and ignore if nothing received
+        if (!QMAC.receive(&p)) continue;
+        // ignore packet if it is not for this device
+        if (p.destination != this->localAddress && p.destination != 0xff)
+            continue;
+        // react according to packet type
+        if (p.isSyncPacket()) {
+            sendSyncPacket(p.localAddress);
+        } else if (p.isAck()) {
+            LOG("Received ACK for ID " + String(p.msgCount));
+            for (size_t i = 0; i < unackedQueue.getSize(); i++) {
+                if (unackedQueue[i].msgCount == p.msgCount) {
+                    unackedQueue.remove(i);
+                    break;
+                }
+            }
+        } else {
+            // Normal Packet
+            LOG("Received Packet with ID " + String(p.msgCount));
+            bool isAlreadyReceived = false;
+            for (size_t i = 0; i < receptionQueue.getSize(); i++) {
+                if (receptionQueue[i].msgCount == p.msgCount) {
+                    isAlreadyReceived = true;
+                    break;
+                }
+            }
+            if (!isAlreadyReceived) {
+                receptionQueue.add(p);
+            }
+            sendAck(p);
+        }
     }
 
     // Go to sleep when active time is over
@@ -70,11 +101,27 @@ bool QMACClass::push(String payload, byte destination) {
 }
 
 bool QMACClass::sendAck(Packet p) {
-    p.destination = p.localAddress;
-    p.localAddress = this->localAddress;
-    p.payloadLength = 0;
-    LOG("Sent ACK for message ID: " + String(p.msgCount));
-    return sendPacket(p);
+    Packet ackPacket = {
+        .destination = p.localAddress,
+        .localAddress = this->localAddress,
+        .msgCount = p.msgCount,
+        .payloadLength = 0,
+    };
+    LOG("Sending ACK for ID " + String(p.msgCount));
+    return sendPacket(ackPacket);
+}
+
+bool QMACClass::sendSyncPacket(byte destination) {
+    Packet syncResponse = {
+        .destination = destination,
+        .localAddress = this->localAddress,
+        .msgCount = 0,
+        .nextWakeUpTime = nextActiveTime(),
+        .payloadLength = 0,
+    };
+    LOG("Sending Sync Packet with timestamp " +
+        String(syncResponse.nextWakeUpTime));
+    return sendPacket(syncResponse);
 }
 
 bool QMACClass::sendPacket(Packet p) {
@@ -85,63 +132,40 @@ bool QMACClass::sendPacket(Packet p) {
     LoRa.write(p.destination);   // add destination address
     LoRa.write(p.localAddress);  // add sender address
     LoRa.write(p.msgCount);      // add message ID
-    LOG("Next active period: " + String(nextActiveTime()));
-    if (p.msgCount == 0) LoRa.print(nextActiveTime());
-    LoRa.write(p.payloadLength);  // add payload length
-    for (size_t i = 0; i < p.payloadLength; i++) {
-        LoRa.write(p.payload[i]);
+    if (p.isSyncPacket()) {
+        LoRa.write(p.nextWakeUpTime & 0xff);
+        LoRa.write(p.nextWakeUpTime >> 8);
+    } else {
+        LoRa.write(p.payloadLength);  // add payload length
+        for (size_t i = 0; i < p.payloadLength; i++) {
+            LoRa.write(p.payload[i]);
+        }
     }
-
     if (!LoRa.endPacket()) {
         LOG("LoRa endPacket failed");
         return false;
     }
-    LOG("Sent Packet with ID:" + String(p.msgCount));
     return true;
 }
 
-bool QMACClass::receive(int packetSize) {
-    if (!packetSize) return false;
-    Packet p;
-    p.destination = LoRa.read();
-    p.localAddress = LoRa.read();
-    p.msgCount = LoRa.read();
-    // If it is a sync packet, answer:
-    if (p.msgCount == 0) {
-        LoRa.print(esp_timer_get_next_alarm() / 1000 + this->sleepingDuration -
-                   millis());
-    }
-    // It isn't:
-    else {
-        p.payloadLength = LoRa.read();
-        for (size_t i = 0; i < p.payloadLength; i++) {
-            p.payload[i] = LoRa.read();
-        }
-
-        // ignore packet if it is not for this device
-        if (p.destination != this->localAddress && p.destination != 0xff) {
-            return true;
-        }
-
-        // Check if received packet is an ACK
-        if (p.payloadLength == 0) {
-            for (size_t i = 0; i < unackedQueue.getSize(); i++) {
-                if (unackedQueue[i].msgCount == p.msgCount) {
-                    unackedQueue.remove(i);
-                    LOG("Packet " + String(p.msgCount) +
-                        " got succesfully ACKED");
-                    return true;
-                }
-            }
-        } else {
-            LOG("Received packet with ID " + String(p.msgCount));
-            receptionQueue.add(p);
-            if (!sendAck(p)) LOG("Failed to send ACK");
+bool QMACClass::receive(Packet* p) {
+    if (!LoRa.parsePacket()) return false;
+    p->destination = LoRa.read();
+    p->localAddress = LoRa.read();
+    p->msgCount = LoRa.read();
+    if (p->isSyncPacket()) {
+        byte t[4];
+        LoRa.readBytes(t, 4);
+        p->nextWakeUpTime = *((int*)t);
+    } else {
+        p->payloadLength = LoRa.read();
+        for (size_t i = 0; i < p->payloadLength; i++) {
+            p->payload[i] = LoRa.read();
         }
     }
-
     return true;
 }
+
 void QMACClass::timerCallback(void* arg) {
     QMACClass* self = static_cast<QMACClass*>(arg);
     esp_timer_start_once(self->timer_handle, self->active
@@ -150,48 +174,30 @@ void QMACClass::timerCallback(void* arg) {
     self->active = !self->active;
 }
 
-int64_t QMACClass::nextActiveTime() {
+uint16_t QMACClass::nextActiveTime() {
     int64_t nextTimeout = esp_timer_get_next_alarm() / 1000 - millis();
     return active ? nextTimeout + this->sleepingDuration : nextTimeout;
 }
 
 void QMACClass::synchronize() {
     LOG("Start synchronization");
-    Packet synchronizationPacket{.destination = 0xFF,
-                                 .localAddress = this->localAddress,
-                                 .msgCount = 0,
-                                 .payloadLength = 0};
-    List<int> receivedTimestamps;
+    List<uint16_t> receivedTimestamps;
     List<uint64_t> transmissionDelays;
     List<uint64_t> receptionTimestamps;
 
     while (1) {
         long transmissionStartTime = millis();
-        synchronizationPacket.nextWakeUpTime = nextActiveTime();
-        sendPacket(synchronizationPacket);
+        sendSyncPacket(0xFF);
 
         // listen for sync responses for some time
         long listeningStartTime = millis();
         while (millis() - listeningStartTime < 1000) {
-            int packetSize = LoRa.parsePacket();
-            if (!packetSize) continue;
-            byte destination = LoRa.read();
-            byte localAddress = LoRa.read();
-            byte msgCount = LoRa.read();
-            LOG(msgCount);
-            // msgCount == 0 is a sync response
-            if (msgCount == 0) {
-                // TODO: Handle error when receiving
-                LOG(packetSize);
-                byte t[4];
-                LoRa.readBytes(t, 4);
-                // convert byte array to int
-                int timestamp = *((int*)t);
-
-                LOG("Received timestamp: " + String(timestamp));
-
-                transmissionDelays.add(transmissionStartTime - millis());
-                receivedTimestamps.add(timestamp);
+            Packet p = {};
+            if (!receive(&p)) continue;
+            if (p.isSyncPacket()) {
+                LOG(p.toString());
+                transmissionDelays.add(millis() - transmissionStartTime);
+                receivedTimestamps.add(p.nextWakeUpTime);
                 receptionTimestamps.add(millis());
             }
         }
@@ -205,15 +211,20 @@ void QMACClass::synchronize() {
     }
 
     int numResponses = receivedTimestamps.getSize();
-    float averageNextActiveTime = 0;
+    uint64_t averageNextActiveTime = 0;
+    LOG("NUM RESPONSES " + String(numResponses));
     for (size_t i = 0; i < numResponses; i++) {
-        LOG(i);
-        LOG(numResponses);
+        LOG("RECEIVED TIMESTAMP " + String(receivedTimestamps[i]));
+        LOG("DELAY " + String(transmissionDelays[i]));
+        LOG("TIME RECEIVED " + String(receptionTimestamps[i]));
+        LOG("MILLIS " + String(millis()));
         averageNextActiveTime += receivedTimestamps[i] -
                                  0.5 * transmissionDelays[i] -
                                  (millis() - receptionTimestamps[i]);
     }
-    averageNextActiveTime = averageNextActiveTime / numResponses;
+    averageNextActiveTime += nextActiveTime();
+    averageNextActiveTime = averageNextActiveTime / (numResponses + 1);
+    LOG("Own Schedule " + String(nextActiveTime()));
     LOG("Average next time active " + String(averageNextActiveTime));
 
     updateTimer(averageNextActiveTime);

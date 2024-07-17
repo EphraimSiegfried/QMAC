@@ -12,9 +12,32 @@ typedef struct QMACPacket {
     byte destination;
     byte localAddress;
     byte msgCount;
-    int64_t nextWakeUpTime;
+    uint16_t nextWakeUpTime;
     byte payloadLength;
     byte payload[5];
+
+    bool isAck() const { return payloadLength == 0; }
+    bool isSyncPacket() const { return msgCount == 0; }
+
+    String toString() const {
+        String result = "destination: 0x" + String(destination, HEX) + "\n";
+        result += "localAddress: 0x" + String(localAddress, HEX) + "\n";
+        result += "msgCount: 0x" + String(msgCount, HEX) + "\n";
+
+        if (isSyncPacket()) {
+            result += "nextWakeUpTime: " + String(nextWakeUpTime) + "\n";
+            return result;
+        }
+        result += "payloadLength: 0x" + String(payloadLength, HEX) + "\n";
+        if (!isAck()) {
+            result += "payload: ";
+            for (byte i = 0; i < payloadLength; i++) {
+                result += (char)payload[i];
+            }
+            result += "\n";
+        }
+        return result;
+    }
 } Packet;
 
 class QMACClass {
@@ -26,12 +49,12 @@ class QMACClass {
     bool push(String payload, byte destination = 0xFF);
     void run();
     int amountAvailable();
-    bool receive(int packetSize);
+    bool receive(Packet *p);
     List<Packet> receptionQueue;
     List<Packet> sendQueue;
     bool active = true;
     static void timerCallback(void *arg);
-    int64_t nextActiveTime();
+    uint16_t nextActiveTime();
 
    private:
     void synchronize();
@@ -44,6 +67,7 @@ class QMACClass {
     esp_timer_handle_t timer_handle;
     List<Packet> unackedQueue;
     bool sendAck(Packet p);
+    bool sendSyncPacket(byte destination);
     bool sendPacket(Packet p);
 };
 extern QMACClass QMAC;
