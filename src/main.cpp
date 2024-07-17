@@ -22,6 +22,9 @@
 
 TinyGPSPlus gps;
 HardwareSerial GPSSerial1(1);
+bool lastState;
+
+String getTime();
 
 void setup() {
     // Setup Serial
@@ -40,7 +43,7 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-    QMAC.begin(15000, 5000);
+    QMAC.begin(5000, 5000);
     LOG("Setup done");
 }
 
@@ -49,7 +52,16 @@ void loop() {
         String msg = Serial.readStringUntil('\n');
         QMAC.push(msg);
     }
-    LOG(QMAC.isActivePeriod() ? "active" : "sleeping");
+
+    bool currentState = QMAC.active;
+
+    // Only log when the state changes
+    if (currentState != lastState) {
+        Serial.println();
+        String state = currentState ? "active" : "sleeping";
+        LOG(state + " time: " + String(millis()));
+        lastState = currentState;
+    }
     QMAC.run();
 
     for (size_t i = 0; i < QMAC.receptionQueue.getSize(); i++) {
@@ -61,6 +73,9 @@ void loop() {
         }
         Serial.println();
     }
+}
 
-    delay(1000);
+String getTime() {
+    while (GPSSerial1.available()) gps.encode(GPSSerial1.read());
+    return String(gps.time.minute()) + ":" + String(gps.time.second());
 }

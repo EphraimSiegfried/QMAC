@@ -28,14 +28,14 @@ class QMACClass {
     bool receive(int packetSize);
     List<Packet> receptionQueue;
     List<Packet> sendQueue;
-    bool isActivePeriod();
+    bool active = true;
+    static void timerCallback(void *arg);
 
    private:
     byte msgCount;
     int64_t lastTimeActive;
     int64_t sleepingDuration;
     int64_t activeDuration;
-    bool active = true;
     int64_t startCounter = millis();
     esp_timer_handle_t timer_handle;
     List<Packet> unackedQueue;
