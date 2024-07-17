@@ -48,3 +48,6 @@ The responsibility of initiating the transmission is given to the receiver.
 - [Contiki-Mac Duty Cycling (gives great overview over MAC protocols)](https://manuscriptlink-society-file.s3-ap-northeast-1.amazonaws.com/kics/conference/icufn2021/abs/5B-3.pdf)
 - [TTGO-T-BEAM Specs](https://www.lilygo.cc/products/t-beam-v1-1-esp32-lora-module)
 - [LoRa Duty Cycle explained](https://www.thethingsnetwork.org/docs/lorawan/duty-cycle/)
+
+### FSTP
+- [FSTP with management of delays] (https://dl.acm.org/doi/10.1145/1031495.1031501)
