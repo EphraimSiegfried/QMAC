@@ -2,12 +2,14 @@
 
 bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
                       byte localAddress) {
-    // assign random address if address not specified
-    this->localAddress = localAddress == 0xFF ? random(254) : localAddress;
+    // Setting up the attributes:
+    this->localAddress = localAddress == 0xFF ? random(254) : localAddress; // assign random address if address not specified
     this->msgCount = 1;
     this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
 
+    // Creating and starting the activity switching timer, then synchronize it
+    // with the other nodes:
     esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
                                           .arg = this,
                                           .name = "duty_cycle_timer"};
@@ -20,9 +22,11 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
 }
 
 void QMACClass::run() {
+    // Should only be run when the node is active:
     if (!this->active) return;
 
     // Schedule in which time slots packets in the queue should be sent
+    // We assign a random time slot for every packets to send to avoid collision
     int slotTime = 100;  // TODO: move
     int activeSlots[sendQueue.getSize()];
     int numSlots = activeDuration / slotTime;
@@ -35,7 +39,9 @@ void QMACClass::run() {
     int64_t startTime = millis();
     size_t idx = 0;
     unackedQueue.clear();
+    // Again, should only run when active:
     while (this->active) {
+        // For each packet, we send it only when it's its turn:
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
             Packet nextPacket = sendQueue[0];
@@ -55,6 +61,8 @@ void QMACClass::run() {
         if (p.isSyncPacket()) {
             sendSyncPacket(p.localAddress);
         } else if (p.isAck()) {
+            // When ACK for a packet is received, we can remove the packet
+            // from the unacked queue:
             LOG("Received ACK for ID " + String(p.msgCount));
             for (size_t i = 0; i < unackedQueue.getSize(); i++) {
                 if (unackedQueue[i].msgCount == p.msgCount) {
@@ -63,7 +71,8 @@ void QMACClass::run() {
                 }
             }
         } else {
-            // Normal Packet
+            // Normal Packet, adding it to the reception queue for upper layers
+            // programs:
             LOG("Received Packet with ID " + String(p.msgCount));
             bool isAlreadyReceived = false;
             for (size_t i = 0; i < receptionQueue.getSize(); i++) {
@@ -83,6 +92,8 @@ void QMACClass::run() {
     LoRa.sleep();
     if (!unackedQueue.isEmpty())
         LOG("Number of UNACKED Packets: " + String(unackedQueue.getSize()));
+    // Putting all unacked packets to the send packets queue, so they will be
+    // sent during the next active period:
     sendQueue.addAll(unackedQueue);
     return;
 }
@@ -90,6 +101,7 @@ void QMACClass::run() {
 int QMACClass::amountAvailable() { return receptionQueue.getSize(); }
 
 bool QMACClass::push(String payload, byte destination) {
+    // Creating a new packets with all required fields:
     Packet p;
     p.destination = destination;
     p.localAddress = localAddress;
@@ -101,6 +113,8 @@ bool QMACClass::push(String payload, byte destination) {
 }
 
 bool QMACClass::sendAck(Packet p) {
+    // Just switches sender and receiver address, and setting the payload length
+    // to 0, to identify it as an ACK packet (chosen arbitrarily):
     Packet ackPacket = {
         .destination = p.localAddress,
         .localAddress = this->localAddress,
@@ -112,6 +126,9 @@ bool QMACClass::sendAck(Packet p) {
 }
 
 bool QMACClass::sendSyncPacket(byte destination) {
+    // Just switches sender and receiver address, and setting the message count
+    // to 0, to identify it as a sync packet (chosen arbitrarily).
+    // Also adds the next active time:
     Packet syncResponse = {
         .destination = destination,
         .localAddress = this->localAddress,
@@ -129,6 +146,7 @@ bool QMACClass::sendPacket(Packet p) {
         LOG("LoRa beginPacket failed");
         return false;
     }
+    // Sends all fields of the packet in order:
     LoRa.write(p.destination);   // add destination address
     LoRa.write(p.localAddress);  // add sender address
     LoRa.write(p.msgCount);      // add message ID
@@ -137,6 +155,7 @@ bool QMACClass::sendPacket(Packet p) {
         LoRa.write(p.nextWakeUpTime >> 8);
     } else {
         LoRa.write(p.payloadLength);  // add payload length
+        // Writes payload:
         for (size_t i = 0; i < p.payloadLength; i++) {
             LoRa.write(p.payload[i]);
         }
@@ -150,6 +169,7 @@ bool QMACClass::sendPacket(Packet p) {
 
 bool QMACClass::receive(Packet* p) {
     if (!LoRa.parsePacket()) return false;
+    // Parses the received data as a packet:
     p->destination = LoRa.read();
     p->localAddress = LoRa.read();
     p->msgCount = LoRa.read();
@@ -176,6 +196,9 @@ void QMACClass::timerCallback(void* arg) {
 
 uint16_t QMACClass::nextActiveTime() {
     int64_t nextTimeout = esp_timer_get_next_alarm() / 1000 - millis();
+    // If active, next active period will happen after the next sleeping period.
+    // If sleeping, next active period will happen directly after the end of the
+    // current period.
     return active ? nextTimeout + this->sleepingDuration : nextTimeout;
 }
 
@@ -185,6 +208,7 @@ void QMACClass::synchronize() {
     List<uint64_t> transmissionDelays;
     List<uint64_t> receptionTimestamps;
 
+    // Sending sync packets and waiting until a response is received:
     while (1) {
         long transmissionStartTime = millis();
         sendSyncPacket(0xFF);
@@ -232,7 +256,8 @@ void QMACClass::synchronize() {
 
 void QMACClass::updateTimer(uint64_t timeUntilActive) {
     esp_timer_stop(this->timer_handle);
-    this->active = false;
+    this->active = false; // Node will be forced to sleep until reaching
+        // the new next active time
     esp_timer_start_once(this->timer_handle, timeUntilActive);
 }
 
