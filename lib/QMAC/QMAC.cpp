@@ -85,11 +85,8 @@ bool QMACClass::sendPacket(Packet p) {
     LoRa.write(p.destination);   // add destination address
     LoRa.write(p.localAddress);  // add sender address
     LoRa.write(p.msgCount);      // add message ID
-    LOG("Next active period: " + String(esp_timer_get_next_alarm() / 1000 +
-                                        this->sleepingDuration - millis()));
-    if (p.msgCount == 0)
-        LoRa.print(esp_timer_get_next_alarm() / 1000 + this->sleepingDuration -
-                   millis());
+    LOG("Next active period: " + String(nextActiveTime()));
+    if (p.msgCount == 0) LoRa.print(nextActiveTime());
     LoRa.write(p.payloadLength);  // add payload length
     for (size_t i = 0; i < p.payloadLength; i++) {
         LoRa.write(p.payload[i]);
@@ -131,7 +128,8 @@ bool QMACClass::receive(int packetSize) {
             for (size_t i = 0; i < unackedQueue.getSize(); i++) {
                 if (unackedQueue[i].msgCount == p.msgCount) {
                     unackedQueue.remove(i);
-                    LOG("Packet " + String(p.msgCount) + " got succesfully ACKED");
+                    LOG("Packet " + String(p.msgCount) +
+                        " got succesfully ACKED");
                     return true;
                 }
             }
@@ -152,6 +150,11 @@ void QMACClass::timerCallback(void* arg) {
     self->active = !self->active;
 }
 
+int64_t QMACClass::nextActiveTime() {
+    int64_t nextTimeout = esp_timer_get_next_alarm() / 1000 - millis();
+    return active ? nextTimeout + this->sleepingDuration : nextTimeout;
+}
+
 void QMACClass::synchronize() {
     LOG("Start synchronization");
     Packet synchronizationPacket{.destination = 0xFF,
@@ -164,6 +167,7 @@ void QMACClass::synchronize() {
 
     while (1) {
         long transmissionStartTime = millis();
+        synchronizationPacket.nextWakeUpTime = nextActiveTime();
         sendPacket(synchronizationPacket);
 
         // listen for sync responses for some time
@@ -178,12 +182,13 @@ void QMACClass::synchronize() {
             // msgCount == 0 is a sync response
             if (msgCount == 0) {
                 // TODO: Handle error when receiving
-                LOG("RECEIVED sync packet");
                 LOG(packetSize);
                 byte t[4];
                 LoRa.readBytes(t, 4);
                 // convert byte array to int
                 int timestamp = *((int*)t);
+
+                LOG("Received timestamp: " + String(timestamp));
 
                 transmissionDelays.add(transmissionStartTime - millis());
                 receivedTimestamps.add(timestamp);
@@ -200,14 +205,17 @@ void QMACClass::synchronize() {
     }
 
     int numResponses = receivedTimestamps.getSize();
-    uint64_t averageNextActiveTime = 0;
+    float averageNextActiveTime = 0;
     for (size_t i = 0; i < numResponses; i++) {
+        LOG(i);
+        LOG(numResponses);
         averageNextActiveTime += receivedTimestamps[i] -
                                  0.5 * transmissionDelays[i] -
                                  (millis() - receptionTimestamps[i]);
     }
     averageNextActiveTime = averageNextActiveTime / numResponses;
-    LOG("Average next time active " + averageNextActiveTime);
+    LOG("Average next time active " + String(averageNextActiveTime));
+
     updateTimer(averageNextActiveTime);
 }
 

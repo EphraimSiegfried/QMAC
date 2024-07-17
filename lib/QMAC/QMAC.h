@@ -31,6 +31,7 @@ class QMACClass {
     List<Packet> sendQueue;
     bool active = true;
     static void timerCallback(void *arg);
+    int64_t nextActiveTime();
 
    private:
     void synchronize();
