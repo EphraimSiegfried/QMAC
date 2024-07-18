@@ -95,12 +95,12 @@ void QMACClass::run() {
     // Go to sleep when active time is over
     LoRa.sleep();
     // synchronize if a percentage of packets didn't arrive
+    double unackedRatio = (double)unackedQueue.getSize() / numPacketsReady;
     if (numPacketsReady > 0) {
-        LOG("PERCENTAGE of UNACKED packets: " +
-            String(100 * unackedQueue.getSize() / numPacketsReady) + "%");
+        LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
+            "%");
     }
-    if (numPacketsReady > 0 &&
-        unackedQueue.getSize() / numPacketsReady > PACKET_UNACKED_THRESHOLD) {
+    if (numPacketsReady > 0 && unackedRatio >= PACKET_UNACKED_THRESHOLD) {
         synchronize();
     }
 
@@ -227,11 +227,10 @@ void QMACClass::synchronize() {
 
         // listen for sync responses for some time
         long listeningStartTime = millis();
-        while (millis() - listeningStartTime < 1000) {
+        while (millis() - listeningStartTime < this->activeDuration) {
             Packet p = {};
             if (!receive(&p)) continue;
             if (p.isSyncPacket()) {
-                LOG(p.toString());
                 transmissionDelays.add(millis() - transmissionStartTime);
                 receivedTimestamps.add(p.nextWakeUpTime);
                 receptionTimestamps.add(millis());
@@ -243,18 +242,14 @@ void QMACClass::synchronize() {
 
         // go to sleep if no responses received
         LoRa.sleep();
-        delay(this->sleepingDuration + random(-1 / 2 * this->activeDuration,
-                                              1 / 2 * this->activeDuration));
+        delay(this->activeDuration + random(-1 / 2 * this->activeDuration,
+                                            1 / 2 * this->activeDuration));
     }
 
     int numResponses = receivedTimestamps.getSize();
     uint64_t averageNextActiveTime = 0;
-    LOG("NUM RESPONSES " + String(numResponses));
     for (size_t i = 0; i < numResponses; i++) {
         LOG("RECEIVED TIMESTAMP " + String(receivedTimestamps[i]));
-        LOG("DELAY " + String(transmissionDelays[i]));
-        LOG("TIME RECEIVED " + String(receptionTimestamps[i]));
-        LOG("MILLIS " + String(millis()));
         averageNextActiveTime += receivedTimestamps[i] -
                                  0.5 * transmissionDelays[i] -
                                  (millis() - receptionTimestamps[i]);

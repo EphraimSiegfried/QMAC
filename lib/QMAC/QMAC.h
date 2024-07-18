@@ -67,7 +67,7 @@ class QMACClass {
     List<Packet> sendQueue; // List of packets to send
     bool active = true; // True if node is active, false if sleeping
     byte localAddress; // MAC address of this node
-    static constexpr double PACKET_UNACKED_THRESHOLD = 0.5;
+    static constexpr double PACKET_UNACKED_THRESHOLD = 0.3;
 
    private:
     void synchronize(); // Sends current next active time to the other nodes,
