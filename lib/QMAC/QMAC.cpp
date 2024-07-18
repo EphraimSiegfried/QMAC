@@ -65,7 +65,7 @@ void QMACClass::run() {
         // react according to packet type
         if (p.isSyncPacket()) {
             receivedSync = true;
-            sendSyncPacket(p.localAddress);
+            sendSyncPacket(p.source);
         } else if (p.isAck()) {
             // When ACK for a packet is received, we can remove the packet
             // from the unacked queue:
@@ -102,7 +102,8 @@ void QMACClass::run() {
         LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
             "%");
     }
-    if (numPacketsReady > 0 && unackedRatio >= PACKET_UNACKED_THRESHOLD && !receivedSync) {
+    if (numPacketsReady > 0 && unackedRatio >= PACKET_UNACKED_THRESHOLD &&
+        !receivedSync) {
         synchronize();
     }
 
@@ -118,7 +119,7 @@ bool QMACClass::push(String payload, byte destination) {
     // Creating a new packets with all required fields:
     Packet p;
     p.destination = destination;
-    p.localAddress = localAddress;
+    p.source = localAddress;
     p.msgCount = this->msgCount++;
     p.payloadLength = payload.length();
     payload.getBytes(p.payload, sizeof(p.payload));
@@ -130,8 +131,8 @@ bool QMACClass::sendAck(Packet p) {
     // Just switches sender and receiver address, and setting the payload length
     // to 0, to identify it as an ACK packet (chosen arbitrarily):
     Packet ackPacket = {
-        .destination = p.localAddress,
-        .localAddress = this->localAddress,
+        .destination = p.source,
+        .source = this->localAddress,
         .msgCount = p.msgCount,
         .payloadLength = 0,
     };
@@ -145,13 +146,13 @@ bool QMACClass::sendSyncPacket(byte destination) {
     // Also adds the next active time:
     Packet syncResponse = {
         .destination = destination,
-        .localAddress = this->localAddress,
+        .source = this->localAddress,
         .msgCount = 0,
-        .nextWakeUpTime = nextActiveTime(),
+        .nextActiveTime = nextActiveTime(),
         .payloadLength = 0,
     };
     LOG("Sending Sync Packet with timestamp " +
-        String(syncResponse.nextWakeUpTime));
+        String(syncResponse.nextActiveTime));
     return sendPacket(syncResponse);
 }
 
@@ -161,12 +162,12 @@ bool QMACClass::sendPacket(Packet p) {
         return false;
     }
     // Sends all fields of the packet in order:
-    LoRa.write(p.destination);   // add destination address
-    LoRa.write(p.localAddress);  // add sender address
-    LoRa.write(p.msgCount);      // add message ID
+    LoRa.write(p.destination);  // add destination address
+    LoRa.write(p.source);       // add sender address
+    LoRa.write(p.msgCount);     // add message ID
     if (p.isSyncPacket()) {
-        LoRa.write(p.nextWakeUpTime & 0xff);
-        LoRa.write(p.nextWakeUpTime >> 8);
+        LoRa.write(p.nextActiveTime & 0xff);
+        LoRa.write(p.nextActiveTime >> 8);
     } else {
         LoRa.write(p.payloadLength);  // add payload length
         // Writes payload:
@@ -185,12 +186,12 @@ bool QMACClass::receive(Packet* p) {
     if (!LoRa.parsePacket()) return false;
     // Parses the received data as a packet:
     p->destination = LoRa.read();
-    p->localAddress = LoRa.read();
+    p->source = LoRa.read();
     p->msgCount = LoRa.read();
     if (p->isSyncPacket()) {
         byte t[4];
         LoRa.readBytes(t, 4);
-        p->nextWakeUpTime = *((int*)t);
+        p->nextActiveTime = *((int*)t);
     } else {
         p->payloadLength = LoRa.read();
         for (size_t i = 0; i < p->payloadLength; i++) {
@@ -234,7 +235,7 @@ void QMACClass::synchronize() {
             if (!receive(&p)) continue;
             if (p.isSyncPacket()) {
                 transmissionDelays.add(millis() - transmissionStartTime);
-                receivedTimestamps.add(p.nextWakeUpTime);
+                receivedTimestamps.add(p.nextActiveTime);
                 receptionTimestamps.add(millis());
             }
         }
