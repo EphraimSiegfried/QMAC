@@ -34,6 +34,7 @@ void QMACClass::run() {
     int activeSlots[sendQueue.getSize()];
     int numSlots = activeDuration / slotTime;
     int numPacketsReady = sendQueue.getSize();
+    bool receivedSync = false;
     for (size_t i = 0; i < numPacketsReady; i++) {
         activeSlots[i] = random(numSlots);
     }
@@ -63,6 +64,7 @@ void QMACClass::run() {
             continue;
         // react according to packet type
         if (p.isSyncPacket()) {
+            receivedSync = true;
             sendSyncPacket(p.localAddress);
         } else if (p.isAck()) {
             // When ACK for a packet is received, we can remove the packet
@@ -100,7 +102,7 @@ void QMACClass::run() {
         LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
             "%");
     }
-    if (numPacketsReady > 0 && unackedRatio >= PACKET_UNACKED_THRESHOLD) {
+    if (numPacketsReady > 0 && unackedRatio >= PACKET_UNACKED_THRESHOLD && !receivedSync) {
         synchronize();
     }
 

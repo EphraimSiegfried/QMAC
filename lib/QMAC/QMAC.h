@@ -79,10 +79,10 @@ class QMACClass {
     bool sendAck(Packet p); // Sends an ACK as answer of the given packet
     bool sendSyncPacket(byte destination); // Sends a sync packet
     bool sendPacket(Packet p); // Sends the given packet
-    byte msgCount; // Number of messages sent including this one
-    // int64_t lastTimeActive; // LEGACY
     int64_t sleepingDuration; // Duration of the sleeping period
     int64_t activeDuration; // Duration of the active period
+    byte msgCount; // Number of messages sent including this one
+    // int64_t lastTimeActive; // LEGACY
     // int64_t startCounter = millis(); // LEGACY
     esp_timer_handle_t timer_handle; // Handler of the activity switching timer
     List<Packet> unackedQueue; // List of packets that have been sent
