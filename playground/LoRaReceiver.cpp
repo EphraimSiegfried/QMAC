@@ -6,7 +6,7 @@
 #define BAND 868E6
 
 void setup() {
-    Serial.begin(9600);
+    Serial.begin(115200);
     while (!Serial);
 
     LoRa.setPins(SS, RST, DI0);  // set CS, reset, IRQ pin
