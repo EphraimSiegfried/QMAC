@@ -10,9 +10,6 @@
 
 #include <List.hpp>
 
-#include <CRC32.h>
-#include <CRC.h>
-
 #define BCADDR 0xFF // Broadcast address
 
 // Definition of a packet in the QMAC protocol

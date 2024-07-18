@@ -52,7 +52,10 @@ void QMACClass::run() {
             Packet nextPacket = sendQueue[0];
             sendPacket(nextPacket);
             sendQueue.removeFirst();
-            unackedQueue.add(nextPacket);
+            // Nobody ACKs a broadcast message, so we shouldn't expect an answer:
+            if (nextPacket.destination != BCADDR) {
+                unackedQueue.add(nextPacket);
+            }
             idx++;
         }
 
@@ -126,7 +129,6 @@ bool QMACClass::push(String payload, byte destination) {
     p.msgCount = this->msgCount++;
     p.payloadLength = payload.length();
     payload.getBytes(p.payload, sizeof(p.payload));
-    crcChecksum.getBytes(p.crcChecksum, 2);
     sendQueue.add(p);
     return true;
 }
@@ -194,21 +196,20 @@ bool QMACClass::sendPacket(Packet p) {
     return true;
 }
 
+// byte QMACClass::CRC_calculate(byte payload, byte payloadLength){
 
-byte QMACClass::CRC_calculate(byte payload, byte payloadLength){
+//     CRC32 crc;
+//     crc.add((uint8_t*)payload, payloadLength);
+//     uint16_t crcValue = crc.calc();
 
-    CRC32 crc;
-    crc.add((uint8_t*)payload, payloadLength);
-    uint16_t crcValue = crc.calc();
+//     // Convert CRC value to byte array
+//     byte crcBytes[2];
+//     crcBytes[0] = crcValue >> 8;  // High byte
+//     crcBytes[1] = crcValue & 0xFF; // Low byte
 
-    // Convert CRC value to byte array
-    byte crcBytes[2];
-    crcBytes[0] = crcValue >> 8;  // High byte
-    crcBytes[1] = crcValue & 0xFF; // Low byte
+//     return crcBytes;
 
-    return crcBytes;
-
-}
+// }
 
 bool QMACClass::receive(Packet* p) {
     if (!LoRa.parsePacket()) return false;
