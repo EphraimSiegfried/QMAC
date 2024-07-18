@@ -64,6 +64,7 @@ bool QMACClass::push(String payload, byte destination) {
     p.msgCount = this->msgCount++;
     p.payloadLength = payload.length();
     payload.getBytes(p.payload, sizeof(p.payload));
+    crcChecksum.getBytes(p.crcChecksum, 2);
     sendQueue.add(p);
     return true;
 }
@@ -89,6 +90,10 @@ bool QMACClass::sendPacket(Packet p) {
         LoRa.write(p.payload[i]);
     }
 
+    p.crcChecksum=CRC_calculate(p.payload, p.payloadLength);
+    
+    LoRa.write(p.crcChecksum); // add the CRC checksum bytes
+
     if (!LoRa.endPacket()) {
         LOG("LoRa endPacket failed");
         return false;
@@ -97,9 +102,28 @@ bool QMACClass::sendPacket(Packet p) {
     return true;
 }
 
+
+byte QMACClass::CRC_calculate(byte payload, byte payloadLength){
+
+    CRC32 crc;
+    crc.add((uint8_t*)payload, payloadLength);
+    uint16_t crcValue = crc.calc();
+
+    // Convert CRC value to byte array
+    byte crcBytes[2];
+    crcBytes[0] = crcValue >> 8;  // High byte
+    crcBytes[1] = crcValue & 0xFF; // Low byte
+
+    return crcBytes;
+
+}
+
 bool QMACClass::receive(int packetSize) {
+
     if (!packetSize) return false;
     Packet p;
+
+
     p.destination = LoRa.read();
     p.localAddress = LoRa.read();
     p.msgCount = LoRa.read();
@@ -112,6 +136,19 @@ bool QMACClass::receive(int packetSize) {
     if (p.destination != this->localAddress && p.destination != 0xff) {
         return true;
     }
+
+        //calculate checksum and ignore packet if checksum is incorrect
+    p.crcChecksum=LoRa.read();
+    calculated_checksum=CRC_calculate(p.payload, p.payloadLength);
+
+
+    if ( !(calculated_checksum == p.crcChecksum) ) //{
+            //Serial.println("CRC check passed.");
+        //} else {
+            //Serial.println("CRC check failed.");
+            return false;
+        //}
+ 
 
     // Check if received packet is an ACK
     if (p.payloadLength == 0) {

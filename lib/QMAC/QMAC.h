@@ -8,12 +8,16 @@
 
 #include <List.hpp>
 
+#include <CRC32.h>
+#include <CRC.h>
+
 typedef struct QMACPacket {
     byte destination;
     byte localAddress;
     byte msgCount;
     byte payloadLength;
     byte payload[5];
+    byte crcChecksum[2];
 } Packet;
 
 class QMACClass {
@@ -30,6 +34,7 @@ class QMACClass {
     List<Packet> sendQueue;
     bool active = true;
     static void timerCallback(void *arg);
+    byte CRC_calculate(byte payload, byte payloadLength);
 
    private:
     byte msgCount;
