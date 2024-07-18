@@ -4,7 +4,7 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
                       byte localAddress) {
     // Setting up the attributes:
     this->localAddress =
-        localAddress == 0xFF
+        localAddress == BCADDR
             ? random(254)
             : localAddress;  // assign random address if address not specified
     this->msgCount = 1;
@@ -60,7 +60,7 @@ void QMACClass::run() {
         // start listening and ignore if nothing received
         if (!QMAC.receive(&p)) continue;
         // ignore packet if it is not for this device
-        if (p.destination != this->localAddress && p.destination != 0xff)
+        if (p.destination != this->localAddress && p.destination != BCADDR)
             continue;
         // react according to packet type
         if (p.isSyncPacket()) {
@@ -90,7 +90,10 @@ void QMACClass::run() {
             if (!isAlreadyReceived) {
                 receptionQueue.add(p);
             }
-            sendAck(p);
+            // Don't send ACKs if destination is broadcast address:
+            if (p.destination != BCADDR) {
+                sendAck(p);
+            }
         }
     }
 
@@ -244,7 +247,7 @@ void QMACClass::synchronize() {
     // Sending sync packets and waiting until a response is received:
     while (1) {
         long transmissionStartTime = millis();
-        sendSyncPacket(0xFF);
+        sendSyncPacket(BCADDR);
 
         // listen for sync responses for some time
         long listeningStartTime = millis();

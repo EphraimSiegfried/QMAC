@@ -10,6 +10,8 @@
 
 #include <List.hpp>
 
+#define BCADDR 0xFF // Broadcast address
+
 // Definition of a packet in the QMAC protocol
 typedef struct QMACPacket {
     byte destination;         // Destination address

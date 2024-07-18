@@ -1,8 +1,9 @@
 # Essential
 
-[ ] Time synchronisation -> all nodes awake at the same time.
+[x] Time synchronisation -> all nodes awake at the same time.
 [ ] Fix activeSlots length.
 [x] Fix isActivePeriod.
+[ ] Test if sending to only one node works
 
 # Nice to have
 
