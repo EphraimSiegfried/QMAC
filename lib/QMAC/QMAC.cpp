@@ -31,14 +31,13 @@ void QMACClass::run() {
     // Schedule in which time slots packets in the queue should be sent
     // We assign a random time slot for every packets to send to avoid collision
     int slotTime = 100;  // TODO: move
-    int activeSlots[sendQueue.getSize()];
     int numSlots = activeDuration / slotTime;
-    int numPacketsReady = sendQueue.getSize();
+    int activeSlots[numSlots];
     bool receivedSync = false;
-    for (size_t i = 0; i < numPacketsReady; i++) {
+    for (size_t i = 0; i < numSlots; i++) {
         activeSlots[i] = random(numSlots);
     }
-    KickSort<int>::quickSort(activeSlots, numPacketsReady);
+    KickSort<int>::quickSort(activeSlots, numSlots);
 
     // Start listening and sending packets
     int64_t startTime = millis();
@@ -100,6 +99,7 @@ void QMACClass::run() {
     // Go to sleep when active time is over
     LoRa.sleep();
     // synchronize if a percentage of packets didn't arrive
+    int numPacketsReady = sendQueue.getSize();
     double unackedRatio = (double)unackedQueue.getSize() / numPacketsReady;
     if (numPacketsReady > 0) {
         LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
