@@ -48,7 +48,6 @@ typedef struct QMACPacket {
 // The class of the QMAC protocol
 class QMACClass {
    public:
-    byte localAddress; // MAC address of this node
     // 60 seconds sleep time, 5 seconds active time
     bool begin(int64_t sleepingDuration = 60000, int64_t activeDuration = 5000,
                byte localAddress = 0xFF); // Initializes the QMAC protocol
@@ -58,15 +57,17 @@ class QMACClass {
     int amountAvailable(); // Length of the reception queue
     bool receive(Packet *p); // Puts all information of the received data in
         // the given pointer to a packet
-    List<Packet> receptionQueue; // List of received packets, for upper layers
-    List<Packet> sendQueue; // List of packets to send
-    bool active = true; // True if node is active, false if sleeping
     static void timerCallback(void *arg); // Procedure called when
         // the activity timer is over : resets the timer, set it to the next
         // active/sleeping period depending on the current activity status,
         // then switches activity status
     uint16_t nextActiveTime(); // Returns the remaining time before
         // the next activity period
+    List<Packet> receptionQueue; // List of received packets, for upper layers
+    List<Packet> sendQueue; // List of packets to send
+    bool active = true; // True if node is active, false if sleeping
+    byte localAddress; // MAC address of this node
+    static constexpr double PACKET_UNACKED_THRESHOLD = 0.5;
 
    private:
     void synchronize(); // Sends current next active time to the other nodes,
@@ -75,6 +76,9 @@ class QMACClass {
         // next active time
     void updateTimer(uint64_t timeUntilActive); // Resets the
         // activity switching timer, then set it to the given next active time
+    bool sendAck(Packet p); // Sends an ACK as answer of the given packet
+    bool sendSyncPacket(byte destination); // Sends a sync packet
+    bool sendPacket(Packet p); // Sends the given packet
     byte msgCount; // Number of messages sent including this one
     // int64_t lastTimeActive; // LEGACY
     int64_t sleepingDuration; // Duration of the sleeping period
@@ -83,8 +87,6 @@ class QMACClass {
     esp_timer_handle_t timer_handle; // Handler of the activity switching timer
     List<Packet> unackedQueue; // List of packets that have been sent
         // by this node but not ACKed by the receiver yet
-    bool sendAck(Packet p); // Sends an ACK as answer of the given packet
-    bool sendSyncPacket(byte destination); // Sends a sync packet
-    bool sendPacket(Packet p); // Sends the given packet
+    
 };
 extern QMACClass QMAC;

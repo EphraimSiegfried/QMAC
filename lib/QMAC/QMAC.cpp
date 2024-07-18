@@ -3,7 +3,10 @@
 bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
                       byte localAddress) {
     // Setting up the attributes:
-    this->localAddress = localAddress == 0xFF ? random(254) : localAddress; // assign random address if address not specified
+    this->localAddress =
+        localAddress == 0xFF
+            ? random(254)
+            : localAddress;  // assign random address if address not specified
     this->msgCount = 1;
     this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
@@ -30,10 +33,11 @@ void QMACClass::run() {
     int slotTime = 100;  // TODO: move
     int activeSlots[sendQueue.getSize()];
     int numSlots = activeDuration / slotTime;
-    for (size_t i = 0; i < sendQueue.getSize(); i++) {
+    int numPacketsReady = sendQueue.getSize();
+    for (size_t i = 0; i < numPacketsReady; i++) {
         activeSlots[i] = random(numSlots);
     }
-    KickSort<int>::quickSort(activeSlots, sendQueue.getSize());
+    KickSort<int>::quickSort(activeSlots, numPacketsReady);
 
     // Start listening and sending packets
     int64_t startTime = millis();
@@ -90,8 +94,16 @@ void QMACClass::run() {
 
     // Go to sleep when active time is over
     LoRa.sleep();
-    if (!unackedQueue.isEmpty())
-        LOG("Number of UNACKED Packets: " + String(unackedQueue.getSize()));
+    // synchronize if a percentage of packets didn't arrive
+    if (numPacketsReady > 0) {
+        LOG("PERCENTAGE of UNACKED packets: " +
+            String(100 * unackedQueue.getSize() / numPacketsReady) + "%");
+    }
+    if (numPacketsReady > 0 &&
+        unackedQueue.getSize() / numPacketsReady > PACKET_UNACKED_THRESHOLD) {
+        synchronize();
+    }
+
     // Putting all unacked packets to the send packets queue, so they will be
     // sent during the next active period:
     sendQueue.addAll(unackedQueue);
@@ -231,7 +243,8 @@ void QMACClass::synchronize() {
 
         // go to sleep if no responses received
         LoRa.sleep();
-        delay(3000);
+        delay(this->sleepingDuration + random(-1 / 2 * this->activeDuration,
+                                              1 / 2 * this->activeDuration));
     }
 
     int numResponses = receivedTimestamps.getSize();
@@ -256,9 +269,9 @@ void QMACClass::synchronize() {
 
 void QMACClass::updateTimer(uint64_t timeUntilActive) {
     esp_timer_stop(this->timer_handle);
-    this->active = false; // Node will be forced to sleep until reaching
-        // the new next active time
-    esp_timer_start_once(this->timer_handle, timeUntilActive);
+    this->active = false;  // Node will be forced to sleep until reaching
+                           // the new next active time
+    esp_timer_start_once(this->timer_handle, timeUntilActive * 1000);
 }
 
 QMACClass QMAC;
