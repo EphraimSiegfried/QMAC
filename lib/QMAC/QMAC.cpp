@@ -181,7 +181,7 @@ bool QMACClass::sendPacket(Packet p) {
         crc.add(p.payload, p.payloadLength);
     }
     uint16_t checksum = crc.calc();
-    byte c[2] = {checksum & 0xff, checksum >> 0};
+    byte c[2] = {checksum & 0xff, checksum >> 8};
     LoRa.write(c, 2);
     if (!LoRa.endPacket()) {
         LOG("LoRa endPacket failed");
