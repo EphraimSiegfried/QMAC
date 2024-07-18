@@ -144,4 +144,22 @@ void QMACClass::timerCallback(void* arg) {
 //     esp_timer_start_once(this->timer_handle, timeUntilActivePeriod);
 // }
 
+
+//CRC-16 function
+//uint16_t CRC_checksum_calculate(){
+//   p.payloadLength = LoRa.read();
+//    uint15_t current_crc= 0x0000;
+//    uint8_t s1= (uint8_t) cucurrent_crc;
+//    uint8_t s2 = (uint8_t) (cucurrent_crc >>8);
+//    int i;
+//    for(i = 0; i< p.patloadLength; i++){
+//        p.payload[i] = LoRa.read();
+//        s1= (s1+ p.payload[i]) %255 ;
+//        s1= (s2+s1) %255;
+//    }
+//    return (s2<<*8) | s1;
+//}
+
+
+
 QMACClass QMAC;
