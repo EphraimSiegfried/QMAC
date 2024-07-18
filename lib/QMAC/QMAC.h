@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
+#include <CRC.h>
+#include <CRC16.h>
 #include <Debug.h>
 #include <KickSort.h>
 #include <LoRa.h>

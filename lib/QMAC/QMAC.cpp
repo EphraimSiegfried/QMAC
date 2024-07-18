@@ -161,20 +161,28 @@ bool QMACClass::sendPacket(Packet p) {
         LOG("LoRa beginPacket failed");
         return false;
     }
+    CRC16 crc;
     // Sends all fields of the packet in order:
     LoRa.write(p.destination);  // add destination address
-    LoRa.write(p.source);       // add sender address
-    LoRa.write(p.msgCount);     // add message ID
+    crc.add(p.destination);
+    LoRa.write(p.source);  // add sender address
+    crc.add(p.source);
+    LoRa.write(p.msgCount);  // add message ID
+    crc.add(p.msgCount);
     if (p.isSyncPacket()) {
-        LoRa.write(p.nextActiveTime & 0xff);
-        LoRa.write(p.nextActiveTime >> 8);
+        // convert nextActiveTime to byte array
+        byte b[2] = {p.nextActiveTime & 0xff, p.nextActiveTime >> 8};
+        LoRa.write(b, 2);
+        crc.add(b, 2);
     } else {
-        LoRa.write(p.payloadLength);  // add payload length
-        // Writes payload:
-        for (size_t i = 0; i < p.payloadLength; i++) {
-            LoRa.write(p.payload[i]);
-        }
+        LoRa.write(p.payloadLength);
+        crc.add(p.payloadLength);
+        LoRa.write(p.payload, p.payloadLength);
+        crc.add(p.payload, p.payloadLength);
     }
+    uint16_t checksum = crc.calc();
+    byte c[2] = {checksum & 0xff, checksum >> 0};
+    LoRa.write(c, 2);
     if (!LoRa.endPacket()) {
         LOG("LoRa endPacket failed");
         return false;
@@ -185,20 +193,30 @@ bool QMACClass::sendPacket(Packet p) {
 bool QMACClass::receive(Packet* p) {
     if (!LoRa.parsePacket()) return false;
     // Parses the received data as a packet:
+    CRC16 crc;
     p->destination = LoRa.read();
+    crc.add(p->destination);
     p->source = LoRa.read();
+    crc.add(p->source);
     p->msgCount = LoRa.read();
+    crc.add(p->msgCount);
     if (p->isSyncPacket()) {
-        byte t[4];
-        LoRa.readBytes(t, 4);
+        byte t[2];
+        LoRa.readBytes(t, 2);
         p->nextActiveTime = *((int*)t);
+        crc.add(t, 2);
     } else {
         p->payloadLength = LoRa.read();
-        for (size_t i = 0; i < p->payloadLength; i++) {
-            p->payload[i] = LoRa.read();
-        }
+        crc.add(p->payloadLength);
+        LoRa.readBytes(p->payload, p->payloadLength);
+        crc.add(p->payload, p->payloadLength);
     }
-    return true;
+    byte checksum[2];
+    LoRa.readBytes(checksum, 2);
+    // return true if CRC check is successfull
+    // TODO: should the checksum be added to the Packet struct? should checking
+    // be done outside of the receive function?
+    return crc.calc() == *((uint16_t*)checksum);
 }
 
 void QMACClass::timerCallback(void* arg) {
