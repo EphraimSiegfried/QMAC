@@ -38,7 +38,7 @@ void QMACClass::run() {
     for (size_t i = 0; i < numPacketsReady; i++) {
         activeSlots[i] = random(numSlots);
     }
-    KickSort<int>::quickSort(activeSlots, numSlots);
+    KickSort<int>::quickSort(activeSlots, numPacketsReady);
 
     // Start listening and sending packets
     int64_t startTime = millis();
