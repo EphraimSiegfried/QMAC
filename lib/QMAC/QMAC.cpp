@@ -1,7 +1,7 @@
 #include <QMAC.h>
 
 bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
-                      byte localAddress) {
+                      int8_t periodsUntilSync, byte localAddress) {
     // Setting up the attributes:
     this->localAddress =
         localAddress == BCADDR
@@ -10,6 +10,7 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
     this->msgCount = 1;
     this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
+    this->periodsUntilSync = periodsUntilSync;
 
     // Creating and starting the activity switching timer, then synchronize it
     // with the other nodes:
@@ -27,6 +28,12 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
 void QMACClass::run() {
     // Should only be run when the node is active:
     if (!this->active) return;
+
+    if (this->periodsSinceSync >= this->periodsUntilSync) {
+        synchronize();
+        this->periodsSinceSync = 0;
+        return;
+    }
 
     // Schedule in which time slots packets in the queue should be sent
     // We assign a random time slot for every packets to send to avoid collision
@@ -116,6 +123,9 @@ void QMACClass::run() {
     // Putting all unacked packets to the send packets queue, so they will be
     // sent during the next active period:
     sendQueue.addAll(unackedQueue);
+
+    this->periodsSinceSync++;
+
     return;
 }
 
@@ -261,31 +271,46 @@ void QMACClass::synchronize() {
     List<uint16_t> receivedTimestamps;
     List<uint64_t> transmissionDelays;
     List<uint64_t> receptionTimestamps;
+    uint64_t cycleDuration = this->activeDuration + this->sleepingDuration;
 
     // Sending sync packets and waiting until a response is received:
-    while (1) {
-        long transmissionStartTime = millis();
-        sendSyncPacket(BCADDR);
-
-        // listen for sync responses for some time
-        long listeningStartTime = millis();
-        while (millis() - listeningStartTime < this->activeDuration) {
-            Packet p = {};
-            if (!receive(&p)) continue;
-            if (p.isSyncPacket()) {
-                transmissionDelays.add(millis() - transmissionStartTime);
-                receivedTimestamps.add(p.nextActiveTime);
-                receptionTimestamps.add(millis());
+    while (receivedTimestamps.isEmpty()) {
+        uint64_t syncStartTime = millis();
+        while ((millis() - syncStartTime) < cycleDuration) {
+            uint64_t period = 0;
+            while (period == 0 || period == this->activeDuration) {
+                period = random(0, this->activeDuration);
             }
+
+            long transmissionStartTime = millis();
+            sendSyncPacket(BCADDR);
+
+            // listen for sync responses for some time
+            long listeningStartTime = millis();
+            while (millis() - listeningStartTime < period) {
+                Packet p = {};
+                if (!receive(&p)) continue;
+                if (p.isSyncPacket()) {
+                    LOG("Received sync packet");
+                    transmissionDelays.add(millis() - transmissionStartTime);
+                    receivedTimestamps.add(p.nextActiveTime);
+                    receptionTimestamps.add(millis());
+                }
+            }
+
+            // stop if response received
+            // if (!receivedTimestamps.isEmpty()) break;
+
+            LoRa.sleep();
+            delay(period);
         }
 
-        // stop if response received
-        if (!receivedTimestamps.isEmpty()) break;
-
-        // go to sleep if no responses received
-        LoRa.sleep();
-        delay(this->activeDuration + random(-1 / 2 * this->activeDuration,
-                                            1 / 2 * this->activeDuration));
+        if (receivedTimestamps.isEmpty()) {
+            // go to sleep if no responses received
+            LoRa.sleep();
+            delay(this->activeDuration + random(-1 / 2 * this->activeDuration,
+                                                1 / 2 * this->activeDuration));
+        }
     }
 
     int numResponses = receivedTimestamps.getSize();

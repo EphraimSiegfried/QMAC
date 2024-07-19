@@ -54,7 +54,8 @@ class QMACClass {
    public:
     // 60 seconds sleep time, 5 seconds active time
     bool begin(int64_t sleepingDuration = 60000, int64_t activeDuration = 5000,
-               byte localAddress = 0xFF);  // Initializes the QMAC protocol
+               int8_t periodsUntilSync = 3, byte localAddress = 0xFF);
+               // Initializes the QMAC protocol
     bool push(String payload,
               byte destination = 0xFF);  // Creates a packet with
                                          // the given payload and destination,
@@ -93,6 +94,8 @@ class QMACClass {
     byte msgCount;  // Number of messages sent including this one
     // int64_t lastTimeActive; // LEGACY
     // int64_t startCounter = millis(); // LEGACY
+    uint8_t periodsUntilSync;
+    uint8_t periodsSinceSync = 0;
     esp_timer_handle_t timer_handle;  // Handler of the activity switching timer
     List<Packet>
         unackedQueue;  // List of packets that have been sent

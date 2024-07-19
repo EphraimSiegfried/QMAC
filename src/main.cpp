@@ -46,15 +46,16 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-    // QMAC.begin(10000, 5000);
-    QMAC.begin(10000, 5000, ADDR);
+    QMAC.begin(10000, 5000);
+    // QMAC.begin(10000, 5000, ADDR);
     LOG("Setup done");
 }
 
 void loop() {
     if (Serial.available()) {
         String msg = Serial.readStringUntil('\n');
-        QMAC.push(msg, SENDADDR);
+        QMAC.push(msg);
+        // QMAC.push(msg, SENDADDR);
     }
 
     bool currentState = QMAC.active;
