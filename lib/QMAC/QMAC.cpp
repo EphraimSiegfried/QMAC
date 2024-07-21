@@ -2,7 +2,6 @@
 
 bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
                       int8_t periodsUntilSync, byte localAddress) {
-    // Setting up the attributes:
     this->localAddress =
         localAddress == BCADDR
             ? random(254)
@@ -12,8 +11,6 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
     this->activeDuration = activeDuration;
     this->periodsUntilSync = periodsUntilSync;
 
-    // Creating and starting the activity switching timer, then synchronize it
-    // with the other nodes:
     esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
                                           .arg = this,
                                           .name = "duty_cycle_timer"};
@@ -26,7 +23,6 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
 }
 
 void QMACClass::run() {
-    // Should only be run when the node is active:
     if (!this->active) return;
 
     if (this->periodsSinceSync >= this->periodsUntilSync) {
@@ -51,7 +47,6 @@ void QMACClass::run() {
     int64_t startTime = millis();
     size_t idx = 0;
     unackedQueue.clear();
-    // Again, should only run when active:
     while (this->active) {
         // For each packet, we send it only when it's its turn:
         if (!sendQueue.isEmpty() &&
@@ -87,8 +82,6 @@ void QMACClass::run() {
                 }
             }
         } else {
-            // Normal Packet, adding it to the reception queue for upper layers
-            // programs:
             LOG("Received Packet with ID " + String(p.msgCount));
             bool isAlreadyReceived = false;
             for (size_t i = 0; i < receptionQueue.getSize(); i++) {
@@ -100,7 +93,6 @@ void QMACClass::run() {
             if (!isAlreadyReceived) {
                 receptionQueue.add(p);
             }
-            // Don't send ACKs if destination is broadcast address:
             if (p.destination != BCADDR) {
                 sendAck(p);
             }
@@ -179,11 +171,11 @@ bool QMACClass::sendPacket(Packet p) {
     }
     CRC16 crc;
     // Sends all fields of the packet in order:
-    LoRa.write(p.destination);  // add destination address
+    LoRa.write(p.destination);  
     crc.add(p.destination);
-    LoRa.write(p.source);  // add sender address
+    LoRa.write(p.source); 
     crc.add(p.source);
-    LoRa.write(p.msgCount);  // add message ID
+    LoRa.write(p.msgCount); 
     crc.add(p.msgCount);
     if (p.isSyncPacket()) {
         // convert nextActiveTime to byte array
@@ -205,21 +197,6 @@ bool QMACClass::sendPacket(Packet p) {
     }
     return true;
 }
-
-// byte QMACClass::CRC_calculate(byte payload, byte payloadLength){
-
-//     CRC32 crc;
-//     crc.add((uint8_t*)payload, payloadLength);
-//     uint16_t crcValue = crc.calc();
-
-//     // Convert CRC value to byte array
-//     byte crcBytes[2];
-//     crcBytes[0] = crcValue >> 8;  // High byte
-//     crcBytes[1] = crcValue & 0xFF; // Low byte
-
-//     return crcBytes;
-
-// }
 
 bool QMACClass::receive(Packet* p) {
     if (!LoRa.parsePacket()) return false;
@@ -260,9 +237,6 @@ void QMACClass::timerCallback(void* arg) {
 
 uint16_t QMACClass::nextActiveTime() {
     int64_t nextTimeout = esp_timer_get_next_alarm() / 1000 - millis();
-    // If active, next active period will happen after the next sleeping period.
-    // If sleeping, next active period will happen directly after the end of the
-    // current period.
     return active ? nextTimeout + this->sleepingDuration : nextTimeout;
 }
 
@@ -332,8 +306,7 @@ void QMACClass::synchronize() {
 
 void QMACClass::updateTimer(uint64_t timeUntilActive) {
     esp_timer_stop(this->timer_handle);
-    this->active = false;  // Node will be forced to sleep until reaching
-                           // the new next active time
+    this->active = false;
     esp_timer_start_once(this->timer_handle, timeUntilActive * 1000);
 }
 
