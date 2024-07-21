@@ -1,4 +1,6 @@
+#pragma once
 #include <Arduino.h>
+
 class LoRaAirtime {
    private:
     uint8_t sf;
@@ -10,20 +12,40 @@ class LoRaAirtime {
     uint8_t preambleLength;
 
    public:
-    LoRaAirtime(uint8_t spreadingFactor, uint16_t bandWidth, uint8_t codeRate,
-                uint8_t preambleLength, boolean hasExplicitHeader,
-                boolean hasCRC, boolean lowDataRateEnabled) {
+    LoRaAirtime() {
+        this->sf = 7;
+        this->bw = 125;
+        this->cr = 4;
+        this->preambleLength = 8;
+        this->h = false;
+        this->crc = false;
+        this->de = false;
+    }
+
+    void setSpreadingFactor(uint8_t spreadingFactor) {
         this->sf = spreadingFactor;
-        this->bw = bandWidth;
-        this->cr = 4 / (codeRate + 4);
+    }
+
+    void setBandwidth(uint16_t bandWidth) { this->bw = bandWidth; }
+
+    void setCodeRate(uint8_t codeRate) { this->cr = 4 / (codeRate + 4); }
+
+    void setHasExplicitHeader(boolean hasExplicitHeader) {
         this->h = hasExplicitHeader;
-        this->crc = hasCRC;
+    }
+
+    void setCRC(boolean hasCRC) { this->crc = hasCRC; }
+
+    void setLowDataRateEnabled(boolean lowDataRateEnabled) {
         this->de = lowDataRateEnabled;
+    }
+
+    void setPreambleLength(uint8_t preambleLength) {
         this->preambleLength = preambleLength;
     }
 
     // returns airtime in ms
-    float calcAirtime(uint8_t payloadLength) {
+    float getAirtime(uint8_t payloadLength) {
         // Calculation based on:
         // https://www.openhacks.com/uploadsproductos/loradesignguide_std.pdf
         const float tSym = pow(2, sf) / bw;
@@ -38,3 +60,4 @@ class LoRaAirtime {
         return tPayload + tPreamble;
     }
 };
+extern LoRaAirtime LoRaCalc;

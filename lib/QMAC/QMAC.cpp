@@ -10,6 +10,9 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
     this->sleepingDuration = sleepingDuration;
     this->activeDuration = activeDuration;
     this->periodsUntilSync = periodsUntilSync;
+    this->availableAirtime = 0;
+    // Corresponds to the 1% LoRa Airtime rule
+    this->availableAirtimePerCycle = 0.01 * (activeDuration + sleepingDuration);
 
     esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
                                           .arg = this,
@@ -19,6 +22,7 @@ bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
     synchronize();
 
     LOG("Local Address: " + String(this->localAddress));
+
     return true;
 }
 
@@ -30,6 +34,7 @@ void QMACClass::run() {
         this->periodsSinceSync = 0;
         return;
     }
+    availableAirtime += availableAirtimePerCycle;
 
     // Schedule in which time slots packets in the queue should be sent
     // We assign a random time slot for every packets to send to avoid collision
@@ -46,19 +51,22 @@ void QMACClass::run() {
     // Start listening and sending packets
     int64_t startTime = millis();
     size_t idx = 0;
-    unackedQueue.clear();
+    resendQueue.clear();
     while (this->active) {
         // For each packet, we send it only when it's its turn:
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
             Packet nextPacket = sendQueue[0];
-            sendPacket(nextPacket);
-            sendQueue.removeFirst();
-            // Nobody ACKs a broadcast message, so we shouldn't expect an answer:
-            if (nextPacket.destination != BCADDR) {
-                unackedQueue.add(nextPacket);
+            if (!sendPacket(nextPacket) || nextPacket.destination != BCADDR) {
+                // resend the packet in the broadcast packet in the next active
+                // time if sending failed
+                //  don't expect acks when sending broadcast messsages
+                resendQueue.add(nextPacket);
             }
+            sendQueue.removeFirst();
             idx++;
+            // Nobody ACKs a broadcast message, so we shouldn't expect an
+            // answer:
         }
 
         Packet p = {};
@@ -69,15 +77,16 @@ void QMACClass::run() {
             continue;
         // react according to packet type
         if (p.isSyncPacket()) {
+            LOG("Received SYNC packet");
             receivedSync = true;
             sendSyncPacket(p.source);
         } else if (p.isAck()) {
             // When ACK for a packet is received, we can remove the packet
             // from the unacked queue:
             LOG("Received ACK for ID " + String(p.msgCount));
-            for (size_t i = 0; i < unackedQueue.getSize(); i++) {
-                if (unackedQueue[i].msgCount == p.msgCount) {
-                    unackedQueue.remove(i);
+            for (size_t i = 0; i < resendQueue.getSize(); i++) {
+                if (resendQueue[i].msgCount == p.msgCount) {
+                    resendQueue.remove(i);
                     break;
                 }
             }
@@ -93,7 +102,9 @@ void QMACClass::run() {
             if (!isAlreadyReceived) {
                 receptionQueue.add(p);
             }
+            LOG("DESTINATION" + String(p.destination));
             if (p.destination != BCADDR) {
+                LOG("SENDING ACK");
                 sendAck(p);
             }
         }
@@ -102,22 +113,19 @@ void QMACClass::run() {
     // Go to sleep when active time is over
     LoRa.sleep();
     // synchronize if a percentage of packets didn't arrive
-    double unackedRatio = (double)unackedQueue.getSize() / numPacketsReady;
-    if (numPacketsReady > 0) {
-        LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
-            "%");
-    }
-    if (numPacketsReady > 0 && unackedRatio >= PACKET_UNACKED_THRESHOLD &&
-        !receivedSync) {
+    double unackedRatio = numPacketsReady > 0
+                              ? (double)resendQueue.getSize() / numPacketsReady
+                              : 0;
+    if (unackedRatio >= PACKET_UNACKED_THRESHOLD && !receivedSync) {
+        LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) + "%");
         synchronize();
+    } else {
+        this->periodsSinceSync++;
     }
 
     // Putting all unacked packets to the send packets queue, so they will be
     // sent during the next active period:
-    sendQueue.addAll(unackedQueue);
-
-    this->periodsSinceSync++;
-
+    sendQueue.addAll(resendQueue);
     return;
 }
 
@@ -164,18 +172,38 @@ bool QMACClass::sendSyncPacket(byte destination) {
     return sendPacket(syncResponse);
 }
 
+float getAirTime(Packet p) {
+    if (p.isAck()) {
+        return ACK_AIRTIME;
+    } else if (p.isSyncPacket()) {
+        return SYNC_AIRTIME;
+    } else {
+        return LoRaCalc.getAirtime(NORMAL_HEADER_SIZE + p.payloadLength);
+    }
+}
+
 bool QMACClass::sendPacket(Packet p) {
+    // check if we have enough airime
+    float packetAirTime = getAirTime(p);
+    LOG("Sending Packet with airtime " + String(packetAirTime) +
+        ". Remaining Airtime: " + String(availableAirtime));
+    if (packetAirTime > availableAirtime) {
+        LOG("Maximum Airtime Reached. Available Airtime: " +
+            String(availableAirtime));
+        return false;
+    }
+
     if (!LoRa.beginPacket()) {
         LOG("LoRa beginPacket failed");
         return false;
     }
     CRC16 crc;
     // Sends all fields of the packet in order:
-    LoRa.write(p.destination);  
+    LoRa.write(p.destination);
     crc.add(p.destination);
-    LoRa.write(p.source); 
+    LoRa.write(p.source);
     crc.add(p.source);
-    LoRa.write(p.msgCount); 
+    LoRa.write(p.msgCount);
     crc.add(p.msgCount);
     if (p.isSyncPacket()) {
         // convert nextActiveTime to byte array
@@ -195,6 +223,7 @@ bool QMACClass::sendPacket(Packet p) {
         LOG("LoRa endPacket failed");
         return false;
     }
+    availableAirtime -= packetAirTime;
     return true;
 }
 
@@ -245,15 +274,17 @@ void QMACClass::synchronize() {
     List<uint16_t> receivedTimestamps;
     List<uint64_t> transmissionDelays;
     List<uint64_t> receptionTimestamps;
-    List<uint8_t> addresses; // TODO: Use better data structure
+    List<uint8_t> addresses;  // TODO: Use better data structure
     uint64_t cycleDuration = this->activeDuration + this->sleepingDuration;
     int minimumListeningDuration = 200;
 
     // Sending sync packets and waiting until a response is received:
     while (receivedTimestamps.isEmpty()) {
         uint64_t syncStartTime = millis();
+        availableAirtime += availableAirtimePerCycle;
         while ((millis() - syncStartTime) < cycleDuration) {
-            uint64_t period = random(minimumListeningDuration, this->activeDuration);
+            uint64_t period =
+                random(minimumListeningDuration, this->activeDuration);
 
             long transmissionStartTime = millis();
             sendSyncPacket(BCADDR);
@@ -265,7 +296,7 @@ void QMACClass::synchronize() {
                 if (!receive(&p)) continue;
                 boolean knownAddress = false;
                 for (size_t i = 0; i < addresses.getSize(); i++) {
-                    if (p.source == addresses[i]){
+                    if (p.source == addresses[i]) {
                         knownAddress = true;
                         break;
                     }
@@ -286,13 +317,15 @@ void QMACClass::synchronize() {
     int numResponses = receivedTimestamps.getSize();
     uint64_t averageNextActiveTime = 0;
     for (size_t i = 0; i < numResponses; i++) {
-        // Results show removing the delay from the calculation improves the synchronization
-        // uint64_t timeResponseSent = receptionTimestamps[i] - 0.5 * transmissionDelays[i];
+        // Results show removing the delay from the calculation improves the
+        // synchronization uint64_t timeResponseSent = receptionTimestamps[i] -
+        // 0.5 * transmissionDelays[i];
         uint64_t timeResponseSent = receptionTimestamps[i];
         uint64_t timeSinceResponseSent = millis() - timeResponseSent;
 
-        averageNextActiveTime += receivedTimestamps[i] - (millis() - timeResponseSent);
-        if (timeSinceResponseSent > receivedTimestamps[i]){
+        averageNextActiveTime +=
+            receivedTimestamps[i] - (millis() - timeResponseSent);
+        if (timeSinceResponseSent > receivedTimestamps[i]) {
             averageNextActiveTime += cycleDuration;
         }
     }
