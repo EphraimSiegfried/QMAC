@@ -15,14 +15,16 @@
 #define ACK_PACKET_SIZE    6
 #define SYNC_PACKET_SIZE   7
 #define NORMAL_HEADER_SIZE 6
-#define PREAMBLE_LENGTH 7 
-// 235 (max lora packet length) - 8 (preamble length) - 6 (normal header size) = 221
+#define PREAMBLE_LENGTH    7
+// 235 (max lora packet length) - 8 (preamble length) - 6 (normal header size) =
+// 221
 #define PAYLOAD_SIZE 221
 // following calculated with https://www.loratools.nl/#/airtime
 #define SYNC_AIRTIME 28.93
 #define ACK_AIRTIME  28.93
 
 typedef struct QMACPacket {
+    // Packet Headers:
     byte destination;
     byte source;
     byte msgCount;
@@ -31,6 +33,7 @@ typedef struct QMACPacket {
     byte payloadLength;
     byte payload[PAYLOAD_SIZE];
     // byte crc[2];
+    uint8_t sendRetryCount;
 
     bool isAck() const { return payloadLength == 0; }
     bool isSyncPacket() const { return msgCount == 0; }
@@ -73,6 +76,7 @@ class QMACClass {
     byte localAddress;
     long availableAirtime;
     long availableAirtimePerCycle;
+    int maxPacketResendTries = 3;
     static constexpr double PACKET_UNACKED_THRESHOLD = 0.8;
 
    private:

@@ -57,11 +57,18 @@ void QMACClass::run() {
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
             Packet nextPacket = sendQueue[0];
+            // resend the packet in the broadcast packet in the next active
+            // time if sending failed
+            //  don't expect acks when sending broadcast messsages
             if (!send(nextPacket) || nextPacket.destination != BCADDR) {
-                // resend the packet in the broadcast packet in the next active
-                // time if sending failed
-                //  don't expect acks when sending broadcast messsages
-                resendQueue.add(nextPacket);
+                nextPacket.sendRetryCount++;
+                if (nextPacket.sendRetryCount > maxPacketResendTries) {
+                    LOG("Dropping packet with ID " +
+                        String(nextPacket.msgCount) + " after " +
+                        String(nextPacket.sendRetryCount) + " retries");
+                } else {
+                    resendQueue.add(nextPacket);
+                }
             }
             sendQueue.removeFirst();
             idx++;
@@ -137,6 +144,7 @@ bool QMACClass::push(String payload, byte destination) {
     p.source = localAddress;
     p.msgCount = this->msgCount++;
     p.payloadLength = payload.length();
+    p.sendRetryCount = 0;
     payload.getBytes(p.payload, sizeof(p.payload));
     sendQueue.add(p);
     return true;
@@ -184,7 +192,8 @@ float getAirTime(Packet p) {
 bool QMACClass::send(Packet p) {
     // check if we have enough airime
     float packetAirTime = getAirTime(p);
-    LOG("Sending Packet with airtime " + String(packetAirTime) +
+    LOG("Sending Packet " + String(p.msgCount) + " with airtime " +
+        String(packetAirTime) +
         ". Remaining Airtime: " + String(availableAirtime));
     if (packetAirTime > availableAirtime) {
         LOG("Maximum Airtime Reached. Available Airtime: " +
