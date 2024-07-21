@@ -70,7 +70,6 @@ bool QMACClass::run() {
             continue;
         // react according to packet type
         if (p.isSyncPacket()) {
-            LOG("Received SYNC packet");
             receivedSync = true;
             sendSyncPacket(p.source);
         } else if (p.isAck()) {
@@ -95,7 +94,6 @@ bool QMACClass::run() {
             if (!isAlreadyReceived) {
                 receptionQueue.add(p);
             }
-            LOG("DESTINATION" + String(p.destination));
             if (p.destination != BCADDR) {
                 LOG("SENDING ACK");
                 sendAck(p);
