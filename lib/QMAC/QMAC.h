@@ -26,9 +26,9 @@
 class QMACClass {
    public:
     /**
-     * Initialize the QMACClass with the given local address.
-     * It will try synchronize with other devices and run until devices were
-     * reached. This will be run for a minimum of a cycle duration (=
+     * Initialize the QMACClass with a device address of your choice.
+     * It will try to synchronize with other devices and run until devices were
+     * found. This will be run for a minimum of a cycle duration (=
      * sleepDuration + activeDuration). This function should ideally be called
      * until it returns true.
      * @param localAddress The local address of the device.
