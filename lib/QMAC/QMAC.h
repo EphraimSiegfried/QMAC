@@ -23,6 +23,42 @@
 #define SYNC_AIRTIME 28.93
 #define ACK_AIRTIME  28.93
 
+typedef struct QMACPacket {
+    // Packet Headers:
+    byte destination;
+    byte source;
+    byte packetID;
+    // only in sync packets
+    uint16_t nextActiveTime;
+    byte payloadLength;
+    byte payload[PAYLOAD_SIZE];
+    // byte crc[2];
+    uint16_t sendRetryCount;
+
+    bool isAck() const { return payloadLength == 0; }
+    bool isSyncPacket() const { return packetID == 0; }
+
+    String toString() const {
+        String result = "destination: 0x" + String(destination, HEX) + "\n";
+        result += "localAddress: 0x" + String(source, HEX) + "\n";
+        result += "msgCount: 0x" + String(packetID, HEX) + "\n";
+
+        if (isSyncPacket()) {
+            result += "nextWakeUpTime: " + String(nextActiveTime) + "\n";
+            return result;
+        }
+        result += "payloadLength: 0x" + String(payloadLength, HEX) + "\n";
+        if (!isAck()) {
+            result += "payload: ";
+            for (byte i = 0; i < payloadLength; i++) {
+                result += (char)payload[i];
+            }
+            result += "\n";
+        }
+        return result;
+    }
+} Packet;
+
 class QMACClass {
    public:
     /**
@@ -136,41 +172,5 @@ class QMACClass {
     bool active = true;
     float unackedPacketThreshold = 0.8;
 };
-
-typedef struct QMACPacket {
-    // Packet Headers:
-    byte destination;
-    byte source;
-    byte packetID;
-    // only in sync packets
-    uint16_t nextActiveTime;
-    byte payloadLength;
-    byte payload[PAYLOAD_SIZE];
-    // byte crc[2];
-    uint16_t sendRetryCount;
-
-    bool isAck() const { return payloadLength == 0; }
-    bool isSyncPacket() const { return packetID == 0; }
-
-    String toString() const {
-        String result = "destination: 0x" + String(destination, HEX) + "\n";
-        result += "localAddress: 0x" + String(source, HEX) + "\n";
-        result += "msgCount: 0x" + String(packetID, HEX) + "\n";
-
-        if (isSyncPacket()) {
-            result += "nextWakeUpTime: " + String(nextActiveTime) + "\n";
-            return result;
-        }
-        result += "payloadLength: 0x" + String(payloadLength, HEX) + "\n";
-        if (!isAck()) {
-            result += "payload: ";
-            for (byte i = 0; i < payloadLength; i++) {
-                result += (char)payload[i];
-            }
-            result += "\n";
-        }
-        return result;
-    }
-} Packet;
 
 extern QMACClass QMAC;
