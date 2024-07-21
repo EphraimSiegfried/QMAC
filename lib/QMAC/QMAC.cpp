@@ -57,7 +57,7 @@ void QMACClass::run() {
         if (!sendQueue.isEmpty() &&
             millis() >= activeSlots[idx] * slotTime + startTime) {
             Packet nextPacket = sendQueue[0];
-            if (!sendPacket(nextPacket) || nextPacket.destination != BCADDR) {
+            if (!send(nextPacket) || nextPacket.destination != BCADDR) {
                 // resend the packet in the broadcast packet in the next active
                 // time if sending failed
                 //  don't expect acks when sending broadcast messsages
@@ -65,8 +65,6 @@ void QMACClass::run() {
             }
             sendQueue.removeFirst();
             idx++;
-            // Nobody ACKs a broadcast message, so we shouldn't expect an
-            // answer:
         }
 
         Packet p = {};
@@ -117,7 +115,8 @@ void QMACClass::run() {
                               ? (double)resendQueue.getSize() / numPacketsReady
                               : 0;
     if (unackedRatio >= PACKET_UNACKED_THRESHOLD && !receivedSync) {
-        LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) + "%");
+        LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
+            "%");
         synchronize();
     } else {
         this->periodsSinceSync++;
@@ -153,7 +152,7 @@ bool QMACClass::sendAck(Packet p) {
         .payloadLength = 0,
     };
     LOG("Sending ACK for ID " + String(p.msgCount));
-    return sendPacket(ackPacket);
+    return send(ackPacket);
 }
 
 bool QMACClass::sendSyncPacket(byte destination) {
@@ -169,7 +168,7 @@ bool QMACClass::sendSyncPacket(byte destination) {
     };
     LOG("Sending Sync Packet with timestamp " +
         String(syncResponse.nextActiveTime));
-    return sendPacket(syncResponse);
+    return send(syncResponse);
 }
 
 float getAirTime(Packet p) {
@@ -182,7 +181,7 @@ float getAirTime(Packet p) {
     }
 }
 
-bool QMACClass::sendPacket(Packet p) {
+bool QMACClass::send(Packet p) {
     // check if we have enough airime
     float packetAirTime = getAirTime(p);
     LOG("Sending Packet with airtime " + String(packetAirTime) +
@@ -282,6 +281,7 @@ void QMACClass::synchronize() {
     while (receivedTimestamps.isEmpty()) {
         uint64_t syncStartTime = millis();
         availableAirtime += availableAirtimePerCycle;
+        // wait for messages for a minimum of one cycleDuration
         while ((millis() - syncStartTime) < cycleDuration) {
             uint64_t period =
                 random(minimumListeningDuration, this->activeDuration);
@@ -318,8 +318,9 @@ void QMACClass::synchronize() {
     uint64_t averageNextActiveTime = 0;
     for (size_t i = 0; i < numResponses; i++) {
         // Results show removing the delay from the calculation improves the
-        // synchronization uint64_t timeResponseSent = receptionTimestamps[i] -
-        // 0.5 * transmissionDelays[i];
+        // synchronization for some reason
+        // uint64_t timeResponseSent = receptionTimestamps[i] - 0.5 *
+        // transmissionDelays[i];
         uint64_t timeResponseSent = receptionTimestamps[i];
         uint64_t timeSinceResponseSent = millis() - timeResponseSent;
 
