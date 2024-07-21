@@ -271,16 +271,15 @@ void QMACClass::synchronize() {
     List<uint16_t> receivedTimestamps;
     List<uint64_t> transmissionDelays;
     List<uint64_t> receptionTimestamps;
+    List<uint8_t> addresses; // TODO: Use better data structure
     uint64_t cycleDuration = this->activeDuration + this->sleepingDuration;
+    int minimumListeningDuration = 200;
 
     // Sending sync packets and waiting until a response is received:
     while (receivedTimestamps.isEmpty()) {
         uint64_t syncStartTime = millis();
         while ((millis() - syncStartTime) < cycleDuration) {
-            uint64_t period = 0;
-            while (period == 0 || period == this->activeDuration) {
-                period = random(0, this->activeDuration);
-            }
+            uint64_t period = random(minimumListeningDuration, this->activeDuration);
 
             long transmissionStartTime = millis();
             sendSyncPacket(BCADDR);
@@ -290,36 +289,38 @@ void QMACClass::synchronize() {
             while (millis() - listeningStartTime < period) {
                 Packet p = {};
                 if (!receive(&p)) continue;
-                if (p.isSyncPacket()) {
+                boolean knownAddress = false;
+                for (size_t i = 0; i < addresses.getSize(); i++) {
+                    if (p.source == addresses[i]){
+                        knownAddress = true;
+                        break;
+                    }
+                }
+                if (p.isSyncPacket() && !knownAddress) {
                     LOG("Received sync packet");
                     transmissionDelays.add(millis() - transmissionStartTime);
                     receivedTimestamps.add(p.nextActiveTime);
                     receptionTimestamps.add(millis());
+                    addresses.add(p.source);
                 }
             }
-
-            // stop if response received
-            // if (!receivedTimestamps.isEmpty()) break;
-
             LoRa.sleep();
             delay(period);
-        }
-
-        if (receivedTimestamps.isEmpty()) {
-            // go to sleep if no responses received
-            LoRa.sleep();
-            delay(this->activeDuration + random(-1 / 2 * this->activeDuration,
-                                                1 / 2 * this->activeDuration));
         }
     }
 
     int numResponses = receivedTimestamps.getSize();
     uint64_t averageNextActiveTime = 0;
     for (size_t i = 0; i < numResponses; i++) {
-        LOG("RECEIVED TIMESTAMP " + String(receivedTimestamps[i]));
-        averageNextActiveTime += receivedTimestamps[i] -
-                                 0.5 * transmissionDelays[i] -
-                                 (millis() - receptionTimestamps[i]);
+        // Results show removing the delay from the calculation improves the synchronization
+        // uint64_t timeResponseSent = receptionTimestamps[i] - 0.5 * transmissionDelays[i];
+        uint64_t timeResponseSent = receptionTimestamps[i];
+        uint64_t timeSinceResponseSent = millis() - timeResponseSent;
+
+        averageNextActiveTime += receivedTimestamps[i] - (millis() - timeResponseSent);
+        if (timeSinceResponseSent > receivedTimestamps[i]){
+            averageNextActiveTime += cycleDuration;
+        }
     }
     averageNextActiveTime += nextActiveTime();
     averageNextActiveTime = averageNextActiveTime / (numResponses + 1);

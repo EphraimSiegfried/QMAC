@@ -54,7 +54,7 @@ class QMACClass {
    public:
     // 60 seconds sleep time, 5 seconds active time
     bool begin(int64_t sleepingDuration = 60000, int64_t activeDuration = 5000,
-               int8_t periodsUntilSync = 3, byte localAddress = 0xFF);
+               int8_t periodsUntilSync = 5, byte localAddress = 0xFF);
                // Initializes the QMAC protocol
     bool push(String payload,
               byte destination = 0xFF);  // Creates a packet with
