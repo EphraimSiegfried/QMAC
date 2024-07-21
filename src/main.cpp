@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Debug.h>
 #include <LoRa.h>
+#include <LoRaAirtime.h>
 #include <QMAC.h>
 #include <SPI.h>
 #include <TinyGPS++.h>
@@ -20,10 +21,11 @@
 #define GPS_RX_PIN 34
 #define GPS_TX_PIN 12
 
-#define ADDR 0x02
-#define SENDADDR 0x01
+#define ADDR     0x01
+#define SENDADDR 0x02
 
 TinyGPSPlus gps;
+LoRaAirtime LoRaCalc;
 HardwareSerial GPSSerial1(1);
 bool lastState;
 
@@ -46,19 +48,22 @@ void setup() {
     GPSSerial1.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);  // 17-TX 18-RX
     delay(1500);
 
-    QMAC.begin(10000, 5000);
-    // QMAC.begin(10000, 5000, ADDR);
+    while(!QMAC.begin()){
+        LOG("FAILED TO FIND DEVICES");
+    }
+
     LOG("Setup done");
 }
 
 void loop() {
     if (Serial.available()) {
         String msg = Serial.readStringUntil('\n');
-        QMAC.push(msg);
-        // QMAC.push(msg, SENDADDR);
+        byte buf[200];
+        msg.getBytes(buf,msg.length());
+        QMAC.push(buf, msg.length());
     }
 
-    bool currentState = QMAC.active;
+    bool currentState = QMAC.isActive();
 
     // Only log when the state changes
     if (currentState != lastState) {
@@ -69,9 +74,8 @@ void loop() {
     }
     QMAC.run();
 
-    for (size_t i = 0; i < QMAC.receptionQueue.getSize(); i++) {
-        Packet p = QMAC.receptionQueue[i];
-        QMAC.receptionQueue.remove(i);
+    while (QMAC.numPacketsAvailable() > 0) {
+        Packet p = QMAC.pop();
         LOG("Received packet:");
         for (size_t i = 0; i < p.payloadLength; i++) {
             Serial.print((char)p.payload[i]);

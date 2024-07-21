@@ -1,38 +1,26 @@
 #include <QMAC.h>
 
-bool QMACClass::begin(int64_t sleepingDuration, int64_t activeDuration,
-                      int8_t periodsUntilSync, byte localAddress) {
-    this->localAddress =
-        localAddress == BCADDR
-            ? random(254)
-            : localAddress;  // assign random address if address not specified
-    this->msgCount = 1;
-    this->sleepingDuration = sleepingDuration;
-    this->activeDuration = activeDuration;
-    this->periodsUntilSync = periodsUntilSync;
-    this->availableAirtime = 0;
+bool QMACClass::begin(byte localAddress) {
+    // assign random address if address not specified
+    this->localAddress = localAddress == BCADDR ? random(254) : localAddress;
     // Corresponds to the 1% LoRa Airtime rule
-    this->availableAirtimePerCycle = 0.01 * (activeDuration + sleepingDuration);
+    this->availableAirtimePerCycle = 0.01 * (activeDuration + sleepDuration);
 
     esp_timer_create_args_t timer_args = {.callback = &QMACClass::timerCallback,
                                           .arg = this,
                                           .name = "duty_cycle_timer"};
     esp_timer_create(&timer_args, &this->timer_handle);
-    esp_timer_start_once(timer_handle, sleepingDuration * 1000);
-    synchronize();
-
-    LOG("Local Address: " + String(this->localAddress));
-
-    return true;
+    esp_timer_start_once(timer_handle, sleepDuration * 1000);
+    return synchronize();
 }
 
-void QMACClass::run() {
-    if (!this->active) return;
+bool QMACClass::run() {
+    if (!this->active) return true;
 
     if (this->periodsSinceSync >= this->periodsUntilSync) {
-        synchronize();
+        if (!synchronize()) return false;
         this->periodsSinceSync = 0;
-        return;
+        return true;
     }
     availableAirtime += availableAirtimePerCycle;
 
@@ -64,7 +52,7 @@ void QMACClass::run() {
                 nextPacket.sendRetryCount++;
                 if (nextPacket.sendRetryCount > maxPacketResendTries) {
                     LOG("Dropping packet with ID " +
-                        String(nextPacket.msgCount) + " after " +
+                        String(nextPacket.packetID) + " after " +
                         String(nextPacket.sendRetryCount) + " retries");
                 } else {
                     resendQueue.add(nextPacket);
@@ -88,18 +76,18 @@ void QMACClass::run() {
         } else if (p.isAck()) {
             // When ACK for a packet is received, we can remove the packet
             // from the unacked queue:
-            LOG("Received ACK for ID " + String(p.msgCount));
+            LOG("Received ACK for ID " + String(p.packetID));
             for (size_t i = 0; i < resendQueue.getSize(); i++) {
-                if (resendQueue[i].msgCount == p.msgCount) {
+                if (resendQueue[i].packetID == p.packetID) {
                     resendQueue.remove(i);
                     break;
                 }
             }
         } else {
-            LOG("Received Packet with ID " + String(p.msgCount));
+            LOG("Received Packet with ID " + String(p.packetID));
             bool isAlreadyReceived = false;
             for (size_t i = 0; i < receptionQueue.getSize(); i++) {
-                if (receptionQueue[i].msgCount == p.msgCount) {
+                if (receptionQueue[i].packetID == p.packetID) {
                     isAlreadyReceived = true;
                     break;
                 }
@@ -121,7 +109,7 @@ void QMACClass::run() {
     double unackedRatio = numPacketsReady > 0
                               ? (double)resendQueue.getSize() / numPacketsReady
                               : 0;
-    if (unackedRatio >= PACKET_UNACKED_THRESHOLD && !receivedSync) {
+    if (unackedRatio >= unackedPacketThreshold && !receivedSync) {
         LOG("PERCENTAGE of UNACKED packets: " + String(100 * unackedRatio) +
             "%");
         synchronize();
@@ -132,22 +120,30 @@ void QMACClass::run() {
     // Putting all unacked packets to the send packets queue, so they will be
     // sent during the next active period:
     sendQueue.addAll(resendQueue);
-    return;
+    return true;
 }
 
-int QMACClass::amountAvailable() { return receptionQueue.getSize(); }
+int QMACClass::numPacketsAvailable() { return receptionQueue.getSize(); }
 
-bool QMACClass::push(String payload, byte destination) {
-    // Creating a new packets with all required fields:
+Packet QMACClass::pop() {
+    if (receptionQueue.isEmpty()) {
+        return {};
+    }
+    Packet p = receptionQueue[0];
+    receptionQueue.remove(0);
+    return p;
+}
+
+void QMACClass::push(byte payload[PAYLOAD_SIZE], byte payloadSize,
+                     byte destination) {
     Packet p;
     p.destination = destination;
     p.source = localAddress;
-    p.msgCount = this->msgCount++;
-    p.payloadLength = payload.length();
+    p.packetID = this->msgCount++;
+    p.payloadLength = payloadSize;
     p.sendRetryCount = 0;
-    payload.getBytes(p.payload, sizeof(p.payload));
+    memcpy(p.payload, payload, payloadSize);
     sendQueue.add(p);
-    return true;
 }
 
 bool QMACClass::sendAck(Packet p) {
@@ -156,10 +152,10 @@ bool QMACClass::sendAck(Packet p) {
     Packet ackPacket = {
         .destination = p.source,
         .source = this->localAddress,
-        .msgCount = p.msgCount,
+        .packetID = p.packetID,
         .payloadLength = 0,
     };
-    LOG("Sending ACK for ID " + String(p.msgCount));
+    LOG("Sending ACK for ID " + String(p.packetID));
     return send(ackPacket);
 }
 
@@ -170,7 +166,7 @@ bool QMACClass::sendSyncPacket(byte destination) {
     Packet syncResponse = {
         .destination = destination,
         .source = this->localAddress,
-        .msgCount = 0,
+        .packetID = 0,
         .nextActiveTime = nextActiveTime(),
         .payloadLength = 0,
     };
@@ -192,7 +188,7 @@ float getAirTime(Packet p) {
 bool QMACClass::send(Packet p) {
     // check if we have enough airime
     float packetAirTime = getAirTime(p);
-    LOG("Sending Packet " + String(p.msgCount) + " with airtime " +
+    LOG("Sending Packet " + String(p.packetID) + " with airtime " +
         String(packetAirTime) +
         ". Remaining Airtime: " + String(availableAirtime));
     if (packetAirTime > availableAirtime) {
@@ -211,8 +207,8 @@ bool QMACClass::send(Packet p) {
     crc.add(p.destination);
     LoRa.write(p.source);
     crc.add(p.source);
-    LoRa.write(p.msgCount);
-    crc.add(p.msgCount);
+    LoRa.write(p.packetID);
+    crc.add(p.packetID);
     if (p.isSyncPacket()) {
         // convert nextActiveTime to byte array
         byte b[2] = {p.nextActiveTime & 0xff, p.nextActiveTime >> 8};
@@ -243,8 +239,8 @@ bool QMACClass::receive(Packet* p) {
     crc.add(p->destination);
     p->source = LoRa.read();
     crc.add(p->source);
-    p->msgCount = LoRa.read();
-    crc.add(p->msgCount);
+    p->packetID = LoRa.read();
+    crc.add(p->packetID);
     if (p->isSyncPacket()) {
         byte t[2];
         LoRa.readBytes(t, 2);
@@ -267,61 +263,60 @@ bool QMACClass::receive(Packet* p) {
 void QMACClass::timerCallback(void* arg) {
     QMACClass* self = static_cast<QMACClass*>(arg);
     esp_timer_start_once(self->timer_handle, self->active
-                                                 ? self->sleepingDuration * 1000
+                                                 ? self->sleepDuration * 1000
                                                  : self->activeDuration * 1000);
     self->active = !self->active;
 }
 
 uint16_t QMACClass::nextActiveTime() {
     int64_t nextTimeout = esp_timer_get_next_alarm() / 1000 - millis();
-    return active ? nextTimeout + this->sleepingDuration : nextTimeout;
+    return active ? nextTimeout + this->sleepDuration : nextTimeout;
 }
 
-void QMACClass::synchronize() {
+bool QMACClass::synchronize() {
     LOG("Start synchronization");
     List<uint16_t> receivedTimestamps;
     List<uint64_t> transmissionDelays;
     List<uint64_t> receptionTimestamps;
     List<uint8_t> addresses;  // TODO: Use better data structure
-    uint64_t cycleDuration = this->activeDuration + this->sleepingDuration;
+    uint64_t cycleDuration = this->activeDuration + this->sleepDuration;
     int minimumListeningDuration = 200;
 
     // Sending sync packets and waiting until a response is received:
-    while (receivedTimestamps.isEmpty()) {
-        uint64_t syncStartTime = millis();
-        availableAirtime += availableAirtimePerCycle;
-        // wait for messages for a minimum of one cycleDuration
-        while ((millis() - syncStartTime) < cycleDuration) {
-            uint64_t period =
-                random(minimumListeningDuration, this->activeDuration);
+    uint64_t syncStartTime = millis();
+    availableAirtime += availableAirtimePerCycle;
+    // wait for messages for a minimum of one cycleDuration
+    while ((millis() - syncStartTime) < cycleDuration) {
+        uint64_t period =
+            random(minimumListeningDuration, this->activeDuration);
 
-            long transmissionStartTime = millis();
-            sendSyncPacket(BCADDR);
+        long transmissionStartTime = millis();
+        sendSyncPacket(BCADDR);
 
-            // listen for sync responses for some time
-            long listeningStartTime = millis();
-            while (millis() - listeningStartTime < period) {
-                Packet p = {};
-                if (!receive(&p)) continue;
-                boolean knownAddress = false;
-                for (size_t i = 0; i < addresses.getSize(); i++) {
-                    if (p.source == addresses[i]) {
-                        knownAddress = true;
-                        break;
-                    }
-                }
-                if (p.isSyncPacket() && !knownAddress) {
-                    LOG("Received sync packet");
-                    transmissionDelays.add(millis() - transmissionStartTime);
-                    receivedTimestamps.add(p.nextActiveTime);
-                    receptionTimestamps.add(millis());
-                    addresses.add(p.source);
+        // listen for sync responses for some time
+        long listeningStartTime = millis();
+        while (millis() - listeningStartTime < period) {
+            Packet p = {};
+            if (!receive(&p)) continue;
+            boolean knownAddress = false;
+            for (size_t i = 0; i < addresses.getSize(); i++) {
+                if (p.source == addresses[i]) {
+                    knownAddress = true;
+                    break;
                 }
             }
-            LoRa.sleep();
-            delay(period);
+            if (p.isSyncPacket() && !knownAddress) {
+                LOG("Received sync packet");
+                transmissionDelays.add(millis() - transmissionStartTime);
+                receivedTimestamps.add(p.nextActiveTime);
+                receptionTimestamps.add(millis());
+                addresses.add(p.source);
+            }
         }
+        LoRa.sleep();
+        delay(period);
     }
+    if (receivedTimestamps.isEmpty()) return false;
 
     int numResponses = receivedTimestamps.getSize();
     uint64_t averageNextActiveTime = 0;
@@ -345,6 +340,7 @@ void QMACClass::synchronize() {
     LOG("Average next time active " + String(averageNextActiveTime));
 
     updateTimer(averageNextActiveTime);
+    return true;
 }
 
 void QMACClass::updateTimer(uint64_t timeUntilActive) {
@@ -352,5 +348,27 @@ void QMACClass::updateTimer(uint64_t timeUntilActive) {
     this->active = false;
     esp_timer_start_once(this->timer_handle, timeUntilActive * 1000);
 }
+
+void QMACClass::setSleepingDuration(uint64_t duration) {
+    sleepDuration = duration;
+}
+
+void QMACClass::setActiveDuration(uint64_t duration) {
+    activeDuration = duration;
+}
+
+void QMACClass::setPeriodsUntilSync(uint8_t periods) {
+    periodsUntilSync = periods;
+}
+
+void QMACClass::setMaxPacketsResendTries(uint16_t maxTries) {
+    maxPacketResendTries = maxTries;
+}
+
+void QMACClass::setUnackedPacketThreshold(float threshold) {
+    unackedPacketThreshold = threshold;
+}
+
+boolean QMACClass::isActive() { return this->active; }
 
 QMACClass QMAC;
